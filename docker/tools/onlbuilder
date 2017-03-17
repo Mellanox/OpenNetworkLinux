@@ -117,6 +117,7 @@ if ops.debian7:
 if ops.debian8:
    ops.image = g_builder8_image_name
 
+ops.image = "mellanox/idg4400:1.1"
 
 if ops.verbose or ops.dry:
    logger.setLevel(logging.DEBUG)
@@ -182,7 +183,7 @@ else:
          g_docker_arguments += " -v %s:%s " % (d,d)
 
       if ops.hostname:
-         g_docker_arguments += " -h %s" % ops.hostname
+         g_docker_arguments += " -h %s" % "idg4400" #ops.hostname
 
       if ops.autobuild:
          g_docker_arguments += " -e ONL_AUTOBUILD=1 "
