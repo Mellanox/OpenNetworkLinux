@@ -12,11 +12,15 @@
 ############################################################
 
 . setup.env
+alias ls='ls --color=auto'
+alias ll='ls -l'
 
-set -e
+#set -e
+
+source $ONL/.#caracal-setup.sh
 
 if [ -n "$ONL_AUTOBUILD" ]; then
-    make all
+    make amd64 #all
     exit 0
 else
     echo Ready to build OpenNetworkLinux.
