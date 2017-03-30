@@ -3,6 +3,7 @@
 # Common packages for all amd64 systems.
 #
 ############################################################
+- setserial
 - dmidecode
 - parted
 - smartmontools
