@@ -66,8 +66,6 @@ Configure:
     - 'ssh defaults'
     - 'openbsd-inetd remove'
     - 'ntp remove'
-    - 'nfs-common remove'
-    - 'rpcbind remove'
     - 'motd remove'
     - 'mountall-bootclean.sh remove'
     - 'mountall.sh remove'
