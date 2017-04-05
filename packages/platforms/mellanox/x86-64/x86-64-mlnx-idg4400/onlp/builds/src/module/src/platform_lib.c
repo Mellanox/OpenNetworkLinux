@@ -77,3 +77,41 @@ psu_read_eeprom(int psu_index, onlp_psu_info_t* psu_info, onlp_fan_info_t* fan_i
 
     return ONLP_STATUS_OK;
 }
+
+int
+sfp_write_file(const char* fname, const char* data, int size)
+{
+    int fd = open(fname, O_WRONLY);
+    if (fd < 0) {
+        return ONLP_STATUS_E_MISSING;
+    }
+
+    int nrd = write(fd, data, size);
+    close(fd);
+
+    if (nrd != size) {
+        AIM_LOG_INTERNAL("Failed to write sfp file '%s'", fname);
+        return ONLP_STATUS_E_INTERNAL;
+    }
+
+    return ONLP_STATUS_OK;
+}
+
+
+int
+sfp_read_file(const char* fname, char* data, int size)
+{
+    int fd = open(fname, O_RDONLY);
+    if (fd < 0) {
+        return ONLP_STATUS_E_MISSING;
+    }
+
+    int nrd = read(fd, data, size);
+    close(fd);
+
+    if (nrd != size) {
+        AIM_LOG_INTERNAL("Failed to read sfp file '%s'", fname);
+        return ONLP_STATUS_E_INTERNAL;
+    }
+    return ONLP_STATUS_OK;
+}

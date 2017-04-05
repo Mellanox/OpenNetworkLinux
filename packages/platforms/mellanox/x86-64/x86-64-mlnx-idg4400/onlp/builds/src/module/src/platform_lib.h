@@ -55,4 +55,8 @@ psu_type_t get_psu_type(int id, char* modelname, int modelname_len);
 int psu_read_eeprom(int psu_index, onlp_psu_info_t* psu_info,
                      onlp_fan_info_t* fan_info);
 
+int sfp_write_file(const char* fname, const char* data, int size);
+
+int sfp_read_file(const char* fname, char* data, int size);
+
 #endif  /* __PLATFORM_LIB_H__ */

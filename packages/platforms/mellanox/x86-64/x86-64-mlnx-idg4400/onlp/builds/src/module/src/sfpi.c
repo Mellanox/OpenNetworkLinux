@@ -34,37 +34,34 @@
 #include <sys/ioctl.h>
 #include "platform_lib.h"
 
-#define MAX_SFP_PATH           64
-#define SFP_SYSFS_VALUE_LEN    20
+#define MAX_SFP_PATH                      64
+#define SFP_SYSFS_INT_VALUE_LEN           20
 static char sfp_node_path[MAX_SFP_PATH] = {0};
-#define NUM_OF_SFP_PORT        32
-#define SFP_PRESENT_STATUS     "good"
-#define SFP_NOT_PRESENT_STATUS "not_connected"
+#define NUM_OF_SFP_PORTS                  12
+#define SFP_EEPROM_FILE_SIZE              784 // 256 * 3 (each number is hex string + space) + 16 ('\n' char for each row)
+
+
 
 static int
 idg4400_sfp_node_read_int(char *node_path, int *value)
 {
-    int data_len = 0, ret = 0;
-    char buf[SFP_SYSFS_VALUE_LEN] = {0};
-    *value = -1;
+   int ret = 0, data_len;
+   char buf[ SFP_SYSFS_INT_VALUE_LEN ];
+   *value = 0;
 
-    ret = onlp_file_read((uint8_t*)buf, sizeof(buf), &data_len, node_path);
+   ret = onlp_file_read((uint8_t*)buf, sizeof(buf), &data_len, node_path);
 
-    if (ret == 0) {
-        if (!strncmp(buf, SFP_PRESENT_STATUS, strlen(SFP_PRESENT_STATUS))) {
-            *value = 1;
-        } else if (!strncmp(buf, SFP_NOT_PRESENT_STATUS, strlen(SFP_NOT_PRESENT_STATUS))) {
-            *value = 0;
-        }
-    }
-
-    return ret;
+   if (ret == 0) {
+       *value = atoi(buf);
+   }
+   return ret;
 }
+
 
 static char*
 idg4400_sfp_get_port_path(int port, char *node_name)
 {
-    sprintf(sfp_node_path, "/bsp/qsfp/qsfp%d%s", port, node_name);
+    sprintf(sfp_node_path, "/bsp/qsfp/qsfp%d/%s", port, node_name);
     return sfp_node_path;
 }
 
@@ -76,7 +73,6 @@ idg4400_sfp_get_port_path(int port, char *node_name)
 int
 onlp_sfpi_init(void)
 {
-    /* Called at initialization time */
     return ONLP_STATUS_OK;
 }
 
@@ -84,12 +80,12 @@ int
 onlp_sfpi_bitmap_get(onlp_sfp_bitmap_t* bmap)
 {
     /*
-     * Ports {1, 32}
+     * Ports {1, 12}
      */
     int p = 1;
     AIM_BITMAP_CLR_ALL(bmap);
 
-    for (; p <= NUM_OF_SFP_PORT; p++) {
+    for (; p <= NUM_OF_SFP_PORTS; p++) {
         AIM_BITMAP_SET(bmap, p);
     }
 
@@ -105,7 +101,7 @@ onlp_sfpi_is_present(int port)
      * Return < 0 if error.
      */
     int present = -1;
-    char* path = idg4400_sfp_get_port_path(port, "_status");
+    char* path = idg4400_sfp_get_port_path(port, "present");
 
     if (idg4400_sfp_node_read_int(path, &present) != 0) {
         AIM_LOG_ERROR("Unable to read present status from port(%d)\r\n", port);
@@ -121,7 +117,7 @@ onlp_sfpi_presence_bitmap_get(onlp_sfp_bitmap_t* dst)
     int ii = 1;
     int rc = 0;
 
-    for (;ii <= NUM_OF_SFP_PORT; ii++) {
+    for (;ii <= NUM_OF_SFP_PORTS; ii++) {
         rc = onlp_sfpi_is_present(ii);
         AIM_BITMAP_MOD(dst, ii, (1 == rc) ? 1 : 0);
     }
@@ -132,7 +128,11 @@ onlp_sfpi_presence_bitmap_get(onlp_sfp_bitmap_t* dst)
 int
 onlp_sfpi_eeprom_read(int port, uint8_t data[256])
 {
-    char* path = idg4400_sfp_get_port_path(port, "");
+    char* path = idg4400_sfp_get_port_path(port, "eeprom");
+    char eeprom[SFP_EEPROM_FILE_SIZE];
+    FILE *fp;
+    char * pch;
+    int idx;
 
     /*
      * Read the SFP eeprom into data[]
@@ -140,11 +140,42 @@ onlp_sfpi_eeprom_read(int port, uint8_t data[256])
      * Return MISSING if SFP is missing.
      * Return OK if eeprom is read
      */
+
     memset(data, 0, 256);
 
-    if (onlplib_sfp_eeprom_read_file(path, data) != 0) {
-        AIM_LOG_ERROR("Unable to read eeprom from port(%d)\r\n", port);
-        return ONLP_STATUS_E_INTERNAL;
+    fp= fopen(path, "r");
+    if(fp == NULL)
+    {
+       AIM_LOG_ERROR("Unable to open eeprom file port(%d)\r\n", port);
+       return -1;
+    }
+
+    idx = fread(eeprom, 1, SFP_EEPROM_FILE_SIZE, fp);
+    if(idx != SFP_EEPROM_FILE_SIZE)
+    {
+       AIM_LOG_ERROR("Unable to read eeprom file port(%d)\r\n", port);
+       return -1;
+    }
+
+    /* Splitting the file */
+    idx = 0;
+    pch = strtok (eeprom,"\n ");
+    while (pch != NULL && idx < 256)
+    {
+      if(sscanf(pch, "%x" ,(unsigned int *)&data[idx]) != 1)
+      {
+         AIM_LOG_ERROR("Eeprom file is not valid, number %s is not hex, port(%d)\r\n",pch, port);
+         return -1;
+      }
+
+      pch = strtok (NULL, "\n ");
+      idx++;
+    }
+
+    if(idx < 256 )
+    {
+       AIM_LOG_ERROR("Eeprom file is not valid %s. number of bytes read %d, port(%d)\r\n",eeprom, idx, port);
+       return -1;
     }
 
     return ONLP_STATUS_OK;
@@ -153,13 +184,55 @@ onlp_sfpi_eeprom_read(int port, uint8_t data[256])
 int
 onlp_sfpi_dev_readb(int port, uint8_t devaddr, uint8_t addr)
 {
-    return ONLP_STATUS_E_UNSUPPORTED;
+   uint8_t data;
+   int size;
+   int rv;
+   char read_string[10] = {0};
+   char* path = idg4400_sfp_get_port_path(port, "read");
+
+   size = sprintf(read_string, "%x %x", addr, 1);
+
+   rv = sfp_write_file(path, read_string, size);
+   if(rv != ONLP_STATUS_OK) {
+      AIM_LOG_ERROR("Unable to write qsfp file port(%d)\r\n", port);
+      return rv;
+   }
+
+   /* Each byte is represented in two hex characters */
+   memset(read_string, 0, sizeof(read_string));
+
+   rv = sfp_read_file(path, read_string, 2);
+   if(rv != ONLP_STATUS_OK) {
+      AIM_LOG_ERROR("Unable to read qsfp file port(%d)\r\n", port);
+      return rv;
+   }
+
+   if(sscanf(read_string, "%x" ,(unsigned int *)&data) != 1)
+   {
+      AIM_LOG_ERROR("Unable to read qsfp byte, read file format is invalid. port(%d)\r\n", port);
+      return ONLP_STATUS_E_INTERNAL;
+   }
+
+   return data;
 }
 
 int
 onlp_sfpi_dev_writeb(int port, uint8_t devaddr, uint8_t addr, uint8_t value)
 {
-    return ONLP_STATUS_E_UNSUPPORTED;
+   int size;
+   int rv;
+   char write_string[10] = {0};
+   char* path = idg4400_sfp_get_port_path(port, "write");
+
+   size = sprintf(write_string, "%x %x %x", addr, 1, value);
+
+   rv = sfp_write_file(path, write_string, size);
+   if(rv != ONLP_STATUS_OK) {
+      AIM_LOG_ERROR("Unable to write qsfp file port(%d)\r\n", port);
+      return rv;
+   }
+
+   return ONLP_STATUS_OK;
 }
 
 int
