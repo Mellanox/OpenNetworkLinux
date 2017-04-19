@@ -47,20 +47,20 @@ typedef enum cpu_thermal_threshold_e {
       CPU_THERMAL_THRESHOLD_ERROR_DEFAULT,   \
       CPU_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT }
 
-/** Asic thermal_threshold */
-typedef enum asic_thermal_threshold_e {
-    ASIC_THERMAL_THRESHOLD_WARNING_DEFAULT  = 105000,
-    ASIC_THERMAL_THRESHOLD_ERROR_DEFAULT    = 115000,
-    ASIC_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT = 120000,
-} asic_thermal_threshold_t;
+/** NPS thermal_threshold */
+typedef enum nps_thermal_threshold_e {
+    NPS_THERMAL_THRESHOLD_WARNING_DEFAULT  = 105000,
+    NPS_THERMAL_THRESHOLD_ERROR_DEFAULT    = 115000,
+    NPS_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT = 120000, }
+nps_thermal_threshold_t;
 
 /**
- * Shortcut for CPU thermal threshold value.
+ * Shortcut for NPS thermal threshold value.
  */
-#define ASIC_THERMAL_THRESHOLD_INIT_DEFAULTS  \
-    { ASIC_THERMAL_THRESHOLD_WARNING_DEFAULT, \
-      ASIC_THERMAL_THRESHOLD_ERROR_DEFAULT,   \
-      ASIC_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT }
+#define NPS_THERMAL_THRESHOLD_INIT_DEFAULTS  \
+    { NPS_THERMAL_THRESHOLD_WARNING_DEFAULT, \
+      NPS_THERMAL_THRESHOLD_ERROR_DEFAULT,   \
+      NPS_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT }
 
 #define VALIDATE(_id)                           \
     do {                                        \
@@ -74,10 +74,15 @@ enum onlp_thermal_id
     THERMAL_RESERVED = 0,
     THERMAL_CPU_CORE_0,
     THERMAL_CPU_CORE_1,
+	THERMAL_CPU_CORE_2,
+	THERMAL_CPU_CORE_3,
     THERMAL_CPU_PACK,
-    THERMAL_ASIC,
-    THERMAL_BOAR_AMB,
-    THERMAL_PORT,
+	THERMAL_FRONT,
+	THERMAL_REAR,
+	THERMAL_PEX,
+	THERMAL_NPS,
+	THERMAL_TCAM,
+	THERMAL_MNB,
     THERMAL_ON_PSU1,
     THERMAL_ON_PSU2,
 };
@@ -87,10 +92,15 @@ static char* last_path[] =  /* must map with onlp_thermal_id */
     "reserved",
     "cpu_core0",
     "cpu_core1",
+	"cpu_core2",
+	"cpu_core3",
     "cpu_pack",
-    "asic",
-    "board_amb",
-    "port_amb",
+	"front",
+	"rear",
+	"pex",
+	"nps",
+	"tcam",
+	"mnb",
     "psu1",
     "psu2"
 };
@@ -106,22 +116,42 @@ static onlp_thermal_info_t linfo[] = {
             ONLP_THERMAL_STATUS_PRESENT,
             ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
         },
+	{ { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_2), "CPU Core 2", 0},
+	        ONLP_THERMAL_STATUS_PRESENT,
+			ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
+		},
+	{ { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_3), "CPU Core 3", 0},
+			ONLP_THERMAL_STATUS_PRESENT,
+			ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
+		},
 	{ { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_PACK), "CPU Pack", 0},
             ONLP_THERMAL_STATUS_PRESENT,
             ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
         },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_ASIC), "Asic Thermal Sensor", 0},
-            ONLP_THERMAL_STATUS_PRESENT,
-            ONLP_THERMAL_CAPS_ALL, 0, ASIC_THERMAL_THRESHOLD_INIT_DEFAULTS
-        },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_BOAR_AMB), "Board AMB Thermal Sensor", 0},
-            ONLP_THERMAL_STATUS_PRESENT,
-            ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
-        },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_PORT), "Port AMB Thermal Sensor", 0},
-            ONLP_THERMAL_STATUS_PRESENT,
-            ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
-        },
+	{ { ONLP_THERMAL_ID_CREATE(THERMAL_FRONT), "Front panel Thermal Sensor", 0},
+			ONLP_THERMAL_STATUS_PRESENT,
+			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
+	    },
+	{ { ONLP_THERMAL_ID_CREATE(THERMAL_REAR) , "Rear panel Thermal Sensor", 0},
+			ONLP_THERMAL_STATUS_PRESENT,
+			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
+	    },
+	{ { ONLP_THERMAL_ID_CREATE(THERMAL_PEX) , "PCIe switch PEX Thermal Sensor", 0},
+			ONLP_THERMAL_STATUS_PRESENT,
+			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
+		},
+	{ { ONLP_THERMAL_ID_CREATE(THERMAL_NPS) , "NPS Thermal Sensor", 0},
+			ONLP_THERMAL_STATUS_PRESENT,
+			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, NPS_THERMAL_THRESHOLD_INIT_DEFAULTS
+	    },
+	{ { ONLP_THERMAL_ID_CREATE(THERMAL_TCAM) , "TCAM chip Thermal Sensor", 0},
+			ONLP_THERMAL_STATUS_PRESENT,
+			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
+		 },
+	{ { ONLP_THERMAL_ID_CREATE(THERMAL_MNB) , "MNG board Thermal Sensor", 0},
+			ONLP_THERMAL_STATUS_PRESENT,
+			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
+		},
 	{ { ONLP_THERMAL_ID_CREATE(THERMAL_ON_PSU1), "PSU-1 Thermal Sensor 1", ONLP_PSU_ID_CREATE(PSU1_ID)},
             ONLP_THERMAL_STATUS_PRESENT,
             ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
