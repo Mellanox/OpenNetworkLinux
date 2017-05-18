@@ -88,6 +88,8 @@ Configure:
   users:
     root:
       password: onl
+    minicom:
+      password: minicom
 
   manifests:
     '/etc/onl/rootfs/manifest.json' :
