@@ -50,18 +50,6 @@
         }                                       \
     } while(0)
 
-/* LED related data
- */
-enum onlp_led_id
-{
-    LED_RESERVED = 0,
-    LED_SYSTEM,
-    LED_FAN1,
-    LED_FAN2,
-    LED_FAN3,
-    LED_FAN4,
-    LED_PSU,
-};
 
 typedef struct led_light_mode_map {
     enum onlp_led_id id;
@@ -110,7 +98,20 @@ led_light_mode_map_t led_map[] = {
 {LED_PSU, LED_MODE_RED,         ONLP_LED_MODE_RED},
 {LED_PSU, LED_MODE_RED_BLINK,   ONLP_LED_MODE_RED_BLINKING},
 {LED_PSU, LED_MODE_GREEN_BLINK, ONLP_LED_MODE_GREEN_BLINKING},
-{LED_PSU, LED_MODE_AUTO,        ONLP_LED_MODE_AUTO}
+{LED_PSU, LED_MODE_AUTO,        ONLP_LED_MODE_AUTO},
+
+{LED_BAD_PORT, LED_MODE_OFF,         ONLP_LED_MODE_OFF},
+{LED_BAD_PORT, LED_MODE_GREEN,       ONLP_LED_MODE_GREEN},
+{LED_BAD_PORT, LED_MODE_RED,         ONLP_LED_MODE_RED},
+{LED_BAD_PORT, LED_MODE_RED_BLINK,   ONLP_LED_MODE_RED_BLINKING},
+{LED_BAD_PORT, LED_MODE_GREEN_BLINK, ONLP_LED_MODE_GREEN_BLINKING},
+{LED_BAD_PORT, LED_MODE_AUTO,        ONLP_LED_MODE_AUTO},
+
+{LED_UID, LED_MODE_OFF,         ONLP_LED_MODE_OFF},
+{LED_UID, LED_MODE_BLUE,        ONLP_LED_MODE_BLUE},
+{LED_UID, LED_MODE_BLUE_BLINK,  ONLP_LED_MODE_BLUE_BLINKING},
+{LED_UID, LED_MODE_AUTO,        ONLP_LED_MODE_AUTO}
+
 };
 
 static char file_names[][10] =  /* must map with onlp_led_id */
@@ -121,7 +122,9 @@ static char file_names[][10] =  /* must map with onlp_led_id */
     "fan2",
     "fan3",
     "fan4",
-    "psu"
+    "psu",
+    "bad_port",
+    "uid",
 };
 
 /*
@@ -165,13 +168,28 @@ static onlp_led_info_t linfo[] =
         ONLP_LED_STATUS_PRESENT,
         ONLP_LED_CAPS_ON_OFF | ONLP_LED_CAPS_GREEN | ONLP_LED_CAPS_GREEN_BLINKING |
         ONLP_LED_CAPS_RED | ONLP_LED_CAPS_RED_BLINKING | ONLP_LED_CAPS_AUTO,
+    },
+    {
+        { ONLP_LED_ID_CREATE(LED_BAD_PORT), "Chassis LED 7 (BAD PORT LED)", 0 },
+        ONLP_LED_STATUS_PRESENT,
+        ONLP_LED_CAPS_ON_OFF | ONLP_LED_CAPS_GREEN | ONLP_LED_CAPS_GREEN_BLINKING |
+        ONLP_LED_CAPS_RED | ONLP_LED_CAPS_RED_BLINKING | ONLP_LED_CAPS_AUTO,
+    },
+    {
+        { ONLP_LED_ID_CREATE(LED_UID), "Chassis LED 8 (UID LED)", 0 },
+        ONLP_LED_STATUS_PRESENT,
+        ONLP_LED_CAPS_ON_OFF | ONLP_LED_CAPS_BLUE | ONLP_LED_CAPS_BLUE_BLINKING |
+        ONLP_LED_CAPS_AUTO,
     }
 };
 
 static int driver_to_onlp_led_mode(enum onlp_led_id id, char* driver_led_mode)
 {
+	char *pos;
     int i, nsize = sizeof(led_map)/sizeof(led_map[0]);
 
+    if ((pos=strchr(driver_led_mode, '\n')) != NULL)
+        *pos = '\0';
     for (i = 0; i < nsize; i++)
     {
         if (id == led_map[i].id &&

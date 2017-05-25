@@ -50,6 +50,24 @@ typedef enum psu_type {
     PSU_TYPE_AC_B2F
 } psu_type_t;
 
+
+#define MIN_LIMIT_FRONT_FAN_RPM       5670  // 6300+= 10 %
+#define MIN_LIMIT_REAR_FAN_RPM        4869  // 5400 += 10 %
+
+/* LED related data
+ */
+enum onlp_led_id
+{
+    LED_RESERVED = 0,
+    LED_SYSTEM,
+    LED_FAN1,
+    LED_FAN2,
+    LED_FAN3,
+    LED_FAN4,
+    LED_PSU,
+    LED_BAD_PORT,
+    LED_UID,
+};
 psu_type_t get_psu_type(int id, char* modelname, int modelname_len);
 
 int psu_read_eeprom(int psu_index, onlp_psu_info_t* psu_info,
