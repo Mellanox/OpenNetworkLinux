@@ -40,7 +40,16 @@ static char sfp_node_path[MAX_SFP_PATH] = {0};
 #define NUM_OF_SFP_PORTS                  12
 #define SFP_EEPROM_FILE_SIZE              784 // 256 * 3 (each number is hex string + space) + 16 ('\n' char for each row)
 
-
+/* Module type definitions - 100GE BASED AOC cable patch */
+#define SFF_MODULE_TYPE_ADDR_0                           0
+#define SFF_MODULE_TYPE_ADDR_128                         128
+#define SFF_MODULE_TYPE_QSFP_PLUS_VAL                    0xd
+#define SFF_MODULE_TYPE_QSFP28_VAL                       0x11
+#define SFF_MODULE_COMPLIANCE_CODES_ADDR                 131
+#define SFF_CC131_EXTENDED_BIT                           0x80
+#define SFF_CC131_EXTENDED_ADDR                          192
+#define SFF_CC192_100GE_AOC_TYPE_VAL                     0x01
+#define SFF_EEPROM_CHECKSUM_ADDR                         191
 
 static int
 idg4400_sfp_node_read_int(char *node_path, int *value)
@@ -176,6 +185,21 @@ onlp_sfpi_eeprom_read(int port, uint8_t data[256])
     {
        AIM_LOG_ERROR("Eeprom file is not valid %s. number of bytes read %d, port(%d)\r\n",eeprom, idx, port);
        return -1;
+    }
+
+    /* Patch for 100GE AOC. When below conditions are TRUE, set module type to QSFP28:
+     * - Module type is QSFP_PLUS 
+     * - Extended_code bit is set
+     * - Extended compliance code is 100GE_AOC type
+     */
+    if(data[SFF_MODULE_TYPE_ADDR_128] == SFF_MODULE_TYPE_QSFP_PLUS_VAL 
+       && (data[SFF_MODULE_COMPLIANCE_CODES_ADDR] & SFF_CC131_EXTENDED_BIT )
+       && (data[SFF_CC131_EXTENDED_ADDR] == SFF_CC192_100GE_AOC_TYPE_VAL ) )
+    {
+       data[SFF_MODULE_TYPE_ADDR_0] = SFF_MODULE_TYPE_QSFP28_VAL;
+       data[SFF_MODULE_TYPE_ADDR_128] = SFF_MODULE_TYPE_QSFP28_VAL;
+       /* Update eeprom checksum */
+       data[SFF_EEPROM_CHECKSUM_ADDR] += (SFF_MODULE_TYPE_QSFP28_VAL - SFF_MODULE_TYPE_QSFP_PLUS_VAL);
     }
 
     return ONLP_STATUS_OK;
