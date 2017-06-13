@@ -17,7 +17,7 @@ alias ll='ls -l'
 
 #set -e
 
-source $ONL/.#caracal-setup.sh
+source $ONL/.#idg4400-setup.sh
 
 if [ -n "$ONL_AUTOBUILD" ]; then
     make amd64 #all
