@@ -51,9 +51,6 @@ typedef enum psu_type {
 } psu_type_t;
 
 
-#define MIN_LIMIT_FRONT_FAN_RPM       5670  // 6300+= 10 %
-#define MIN_LIMIT_REAR_FAN_RPM        4869  // 5400 += 10 %
-
 /* LED related data
  */
 enum onlp_led_id
@@ -68,6 +65,25 @@ enum onlp_led_id
     LED_BAD_PORT,
     LED_UID,
 };
+
+
+/***************** Fans *****************/
+#define FRONT_FANS_MIN_SPEED            6300
+#define FRONT_FANS_MAX_SPEED            21000
+#define REAR_FANS_MIN_SPEED             5400
+#define REAR_FANS_MAX_SPEED             18000
+
+extern const int min_fan_speed[CHASSIS_FAN_COUNT+1];
+extern const int max_fan_speed[CHASSIS_FAN_COUNT+1];
+
+#define IS_FAN_RPM_IN_THE_VALID_RANGE(_localId_, _rpm_) \
+   ( ( ( min_fan_speed[ ( _localId_ ) ] * 0.87 ) < ( _rpm_ ) ) && ( ( _rpm_ ) < ( ( max_fan_speed[ ( _localId_ ) ] * 1.12 ) ) ) )
+
+
+#define MIN_LIMIT_FRONT_FAN_RPM       FRONT_FANS_MIN_SPEED * 0.9  // 6300 -= 10 %
+#define MIN_LIMIT_REAR_FAN_RPM        REAR_FANS_MIN_SPEED * 0.9 // 5400 -= 10 %
+
+
 psu_type_t get_psu_type(int id, char* modelname, int modelname_len);
 
 int psu_read_eeprom(int psu_index, onlp_psu_info_t* psu_info,
