@@ -201,6 +201,12 @@ onlp_thermali_info_get(onlp_oid_t id, onlp_thermal_info_t* info)
 
     info->mcelsius = atoi(r_data) / temp_base;
 
+    if (local_id == THERMAL_PEX)
+    {
+        /* Workaround of PEX bug */
+        info->mcelsius -= 24000;
+    }
+
     return ONLP_STATUS_OK;
 }
 

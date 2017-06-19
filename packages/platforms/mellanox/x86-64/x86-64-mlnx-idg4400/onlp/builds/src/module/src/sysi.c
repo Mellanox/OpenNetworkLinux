@@ -49,6 +49,8 @@
 #define PREFIX_PATH_ON_CPLD_DEV       "/bsp/cpld"
 #define NUM_OF_CPLD                   3
 
+extern int thermal_algorithm_enable;
+
 static char arr_cplddev_name[NUM_OF_CPLD][30] =
 {
     "cpld_brd_version",
@@ -197,3 +199,41 @@ onlp_sysi_platform_manage_leds(void)
 	return ONLP_STATUS_OK;
 }
 
+
+int onlp_sysi_platform_manage_fans(void)
+{
+    int rv = 0;
+    onlp_fan_info_t info;
+    onlp_oid_t local_id;
+    int all_fans_speed_percentage = 60;
+
+    if ( thermal_algorithm_enable )
+    {
+        for ( local_id = 1; local_id <= 8; local_id++ )
+        {
+            rv = onlp_fani_info_get(ONLP_FAN_ID_CREATE(local_id), &info);
+            if (rv < 0) {
+                return rv;
+            }
+            else
+            {
+                if ( ! ( info.status & 1 ) )
+                {
+                    /* Fan is not present */
+                    all_fans_speed_percentage = 100;
+                    break;
+                }
+
+                if ( ! IS_FAN_RPM_IN_THE_VALID_RANGE( local_id, info.rpm ) )
+                {
+                    all_fans_speed_percentage = 100;
+                    break;
+                }
+            }
+        }
+
+        onlp_fani_percentage_set( ONLP_FAN_ID_CREATE(1), all_fans_speed_percentage );
+    }
+
+    return rv;
+}

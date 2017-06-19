@@ -38,8 +38,8 @@
 #define RPM_MAGIC_MIN  153.0
 #define RPM_MAGIC_MAX  255.0
 
-#define PSU_FAN_RPM_MIN 11700.0
-#define PSU_FAN_RPM_MAX 19500.0
+#define PSU_FAN_RPM_MIN 1000.0
+#define PSU_FAN_RPM_MAX 18000.0
 
 #define PROJECT_NAME
 #define LEN_FILE_NAME 80
@@ -56,8 +56,20 @@
 #define FAN_1_ON_PSU1       9
 #define FAN_1_ON_PSU2       10
 
-static int min_fan_speed[CHASSIS_FAN_COUNT+1] = {0};
-static int max_fan_speed[CHASSIS_FAN_COUNT+1] = {0};
+
+const int min_fan_speed[CHASSIS_FAN_COUNT+1] = { 0, /*      Front       ,       Rear */
+                                                    FRONT_FANS_MIN_SPEED, REAR_FANS_MIN_SPEED,   /* Local fan id 1 & 2 */
+                                                    FRONT_FANS_MIN_SPEED, REAR_FANS_MIN_SPEED,   /* Local fan id 3 & 4 */
+                                                    FRONT_FANS_MIN_SPEED, REAR_FANS_MIN_SPEED,   /* Local fan id 5 & 6 */
+                                                    FRONT_FANS_MIN_SPEED, REAR_FANS_MIN_SPEED }; /* Local fan id 7 & 8 */
+
+const int max_fan_speed[CHASSIS_FAN_COUNT+1] = { 0, /*      Front       ,       Rear */
+                                                    FRONT_FANS_MAX_SPEED, REAR_FANS_MAX_SPEED,   /* Local fan id 1 & 2 */
+                                                    FRONT_FANS_MAX_SPEED, REAR_FANS_MAX_SPEED,   /* Local fan id 3 & 4 */
+                                                    FRONT_FANS_MAX_SPEED, REAR_FANS_MAX_SPEED,   /* Local fan id 5 & 6 */
+                                                    FRONT_FANS_MAX_SPEED, REAR_FANS_MAX_SPEED }; /* Local fan id 7 & 8 */
+
+int thermal_algorithm_enable = 1;
 
 typedef struct fan_path_S
 {
@@ -71,7 +83,7 @@ typedef struct fan_path_S
 #define _MAKE_FAN_PATH_ON_MAIN_BOARD(prj,id) \
     { #prj"fan"#id"_status", \
       #prj"fan"#id"_speed_get", \
-      #prj"fan"#id"_speed_set", \
+      #prj"fan_speed_set", \
       #prj"fan"#id"_min", \
       #prj"fan"#id"_max" }
 
@@ -223,8 +235,7 @@ static int
 _onlp_fani_info_get_fan(int local_id, onlp_fan_info_t* info)
 {
     int   len = 0, nbytes = 10;
-    float range = 0;
-    float temp  = 0;
+    float percentage  = 0;
     float fru_index = 0;
     char  r_data[10]   = {0};
     char  fullpath[65] = {0};
@@ -260,26 +271,10 @@ _onlp_fani_info_get_fan(int local_id, onlp_fan_info_t* info)
     }
 
     if (ONLP_FAN_CAPS_GET_PERCENTAGE & info->caps) {
-        /* get fan min speed
-         */
-        snprintf(fullpath, sizeof(fullpath), "%s%s", PREFIX_PATH, fan_path[local_id].min);
-        OPEN_READ_FILE(fullpath, r_data, nbytes, len);
-        min_fan_speed[local_id] = atoi(r_data);
-
-        /* get fan max speed
-         */
-        snprintf(fullpath, sizeof(fullpath), "%s%s", PREFIX_PATH, fan_path[local_id].max);
-        OPEN_READ_FILE(fullpath, r_data, nbytes, len);
-        max_fan_speed[local_id] = atoi(r_data);
-
         /* get speed percentage from rpm */
-        range = max_fan_speed[local_id] - min_fan_speed[local_id];
-        if (range > 0) {
-            temp = ((float)info->rpm - (float)min_fan_speed[local_id]) / range * 40.0 + 60.0;
-            if (temp < PERCENTAGE_MIN) {
-                temp = PERCENTAGE_MIN;
-            }
-            info->percentage = (int)temp;
+        if ( ( max_fan_speed[local_id] - min_fan_speed[local_id] ) > 0) {
+            percentage = ( (float)info->rpm / max_fan_speed[local_id] ) * 100 ;
+            info->percentage = (int)percentage;
         } else {
             return ONLP_STATUS_E_INTERNAL;
         }
@@ -294,8 +289,7 @@ _onlp_fani_info_get_fan_on_psu(int local_id, int psu_id, onlp_fan_info_t* info)
     int   len = 0, nbytes = 10;
     char  r_data[10]   = {0};
     char  fullpath[80] = {0};
-    float rpms_per_perc = 0.0;
-    float temp = 0.0;
+    float percentage = 0.0;
 
     /* get fan status
     */
@@ -319,12 +313,8 @@ _onlp_fani_info_get_fan_on_psu(int local_id, int psu_id, onlp_fan_info_t* info)
     }
 
     /* get speed percentage from rpm */
-    rpms_per_perc = PSU_FAN_RPM_MIN / PERCENTAGE_MIN;
-    temp = (float)info->rpm / rpms_per_perc;
-    if (temp < PERCENTAGE_MIN) {
-      temp = PERCENTAGE_MIN;
-    }
-    info->percentage = (int)temp;
+    percentage = ( (float)info->rpm / PSU_FAN_RPM_MAX ) * 100;
+    info->percentage = (int)percentage;
 
     /* Serial number and model for PSU fan is the same as for appropriate PSU */
     if (FAN_1_ON_PSU1 == local_id) {
@@ -338,12 +328,139 @@ _onlp_fani_info_get_fan_on_psu(int local_id, int psu_id, onlp_fan_info_t* info)
     return ONLP_STATUS_OK;
 }
 
+int onlp_fani_string_to_float(char *str, float *output)
+{
+    int char_index = 0, devider = 1;
+    float output_int = 0, output_float = 0;
+
+    while ( ( str[char_index] != ' ' && str[char_index] != '\n' && str[char_index] != '\0' && str[char_index] != '.' && str[char_index] != EOF ) &&
+            ( '0' <= str[char_index] ) && ( str[char_index] <= '9' ) )
+    {
+        output_int *= 10;
+        output_int += ( str[char_index] - '0' );
+        char_index++;
+    }
+
+    if ( str[char_index] == '.' )
+    {
+        char_index++;
+        while ( ( str[char_index] != ' ' && str[char_index] != '\n' && str[char_index] != '\0' && str[char_index] != EOF) &&
+                ( '0' <= str[char_index] ) && ( str[char_index] <= '9' ) )
+        {
+            output_float *= 10;
+            output_float += ( str[char_index] - '0' );
+            devider *= 10;
+            char_index++;
+        }
+    }
+
+    *output = output_int + ( output_float / devider );
+
+    return ONLP_STATUS_OK;
+}
+
+int onlp_fani_parse_cfg_file( char *filename, char out_cfg_keys[10][50], char out_cfg_data[10][50], unsigned int *out_keywords_number )
+{
+    FILE *input_file;
+    int character;
+    unsigned int  keyword_char_index = 0, data_char_index = 0, keywords_index = 0;
+
+    input_file = fopen(filename, "rw+");
+    if (input_file == 0)
+    {
+        return ONLP_STATUS_E_INVALID;
+    }
+
+    while ( ( character = fgetc( input_file ) ) != EOF )
+    {
+        if ( character == '#')
+        {
+            while ( ( character = fgetc( input_file ) ) != EOF )
+            {
+                if ( character == '\n' || character == '\0' )
+                {
+                    break;
+                }
+            }
+        }
+
+        if ( character != ' ' && character != '\n' )
+        {
+            if ( character != '=' )
+            {
+                out_cfg_keys[keywords_index][keyword_char_index] = character;
+                keyword_char_index++;
+            }
+            else
+            {
+                out_cfg_keys[keywords_index][keyword_char_index] = '\0';
+                keyword_char_index = 0;
+                while ( ( character = fgetc( input_file ) ) != EOF )
+                {
+                    if ( character == '#')
+                    {
+                        while ( ( character = fgetc( input_file ) ) != EOF )
+                        {
+                            if ( character == '\n' || character == '\0' )
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    if ( character == '\n' || character == EOF )
+                    {
+                        out_cfg_data[keywords_index][data_char_index] = '\0';
+                        data_char_index = 0;
+                        keywords_index++;
+                        break;
+                    }
+                    if ( character != ' ' )
+                    {
+                        out_cfg_data[keywords_index][data_char_index] = character;
+                        data_char_index++;
+                    }
+                }
+            }
+        }
+    }
+
+    *out_keywords_number = keywords_index;
+
+    fclose(input_file);
+
+    return ONLP_STATUS_OK;
+
+}
+
+
 /*
  * This function will be called prior to all of onlp_fani_* functions.
  */
 int
 onlp_fani_init(void)
 {
+    int rv;
+    float data;
+    char cfg_keys[10][50] = {{'\0'}};
+    char cfg_data[10][50] = {{'\0'}};
+    unsigned int keywords_length, index;
+
+    /* Parse the thermal algorithm control file */
+    rv = onlp_fani_parse_cfg_file( "/usr/src/local/mlnx/idg4400/.thermal_algorithm_control", cfg_keys, cfg_data, &keywords_length );
+    if (rv < 0) {
+        thermal_algorithm_enable = 1;
+    }
+    else
+    {
+        for ( index = 0; index < keywords_length; index++ )
+        {
+            if ( strcmp(cfg_keys[index], "enable") == 0 )
+            {
+                onlp_fani_string_to_float(cfg_data[index], &data);
+                thermal_algorithm_enable = (int)data;
+            }
+        }
+    }
     return ONLP_STATUS_OK;
 }
 
@@ -395,7 +512,7 @@ onlp_fani_info_get(onlp_oid_t id, onlp_fan_info_t* info)
 int
 onlp_fani_rpm_set(onlp_oid_t id, int rpm)
 {
-    float temp = 0.0;
+    float pwm = 0.0;
     int   rv = 0, local_id = 0, nbytes = 10;
     char  r_data[10]   = {0};
     onlp_fan_info_t* info = NULL;
@@ -430,10 +547,9 @@ onlp_fani_rpm_set(onlp_oid_t id, int rpm)
         return ONLP_STATUS_E_PARAM;
     }
 
-    temp = (rpm - min_fan_speed[local_id]) * (RPM_MAGIC_MAX - RPM_MAGIC_MIN) /
-        (max_fan_speed[local_id] - min_fan_speed[local_id]) + RPM_MAGIC_MIN;
+    pwm = ( (float)rpm / max_fan_speed[local_id] ) * RPM_MAGIC_MAX;
 
-    snprintf(r_data, sizeof(r_data), "%d", (int)temp);
+    snprintf(r_data, sizeof(r_data), "%d", (int)pwm);
     nbytes = strnlen(r_data, sizeof(r_data));
     rv = onlp_file_write((uint8_t*)r_data, nbytes, "%s%s", PREFIX_PATH,
             fan_path[local_id].r_speed_set);
@@ -455,7 +571,7 @@ onlp_fani_rpm_set(onlp_oid_t id, int rpm)
 int
 onlp_fani_percentage_set(onlp_oid_t id, int p)
 {
-    float temp = 0.0;
+    float pwm = 0.0;
     int   rv = 0, local_id = 0, nbytes = 10;
     char  r_data[10]   = {0};
     onlp_fan_info_t* info = NULL;
@@ -483,16 +599,14 @@ onlp_fani_percentage_set(onlp_oid_t id, int p)
        Value 153 is 60%.
        Value 255 is 100%.
     */
-    temp = (p - PERCENTAGE_MIN) * (RPM_MAGIC_MAX - RPM_MAGIC_MIN) /
-        (PERCENTAGE_MAX - PERCENTAGE_MIN) + RPM_MAGIC_MIN;
-
-    snprintf(r_data, sizeof(r_data), "%d", (int)temp);
+    pwm = ( (float)p / 100 ) * RPM_MAGIC_MAX;
+    snprintf(r_data, sizeof(r_data), "%d", (int)pwm);
     nbytes = strnlen(r_data, sizeof(r_data));
     rv = onlp_file_write((uint8_t*)r_data, nbytes, "%s%s", PREFIX_PATH,
             fan_path[local_id].r_speed_set);
-	if (rv < 0) {
-		return ONLP_STATUS_E_INTERNAL;
-	}
+    if (rv < 0) {
+        return ONLP_STATUS_E_INTERNAL;
+    }
 
     return ONLP_STATUS_OK;
 }
