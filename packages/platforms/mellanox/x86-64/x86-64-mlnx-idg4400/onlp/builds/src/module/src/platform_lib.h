@@ -50,6 +50,23 @@ typedef enum psu_type {
     PSU_TYPE_AC_B2F
 } psu_type_t;
 
+enum onlp_thermal_id
+{
+    THERMAL_RESERVED = 0,
+    THERMAL_CPU_CORE_0,
+    THERMAL_CPU_CORE_1,
+	THERMAL_CPU_CORE_2,
+	THERMAL_CPU_CORE_3,
+    THERMAL_CPU_PACK,
+	THERMAL_FRONT,
+	THERMAL_REAR,
+	THERMAL_PEX,
+	THERMAL_NPS,
+	THERMAL_TCAM,
+	THERMAL_MNB,
+    THERMAL_ON_PSU1,
+    THERMAL_ON_PSU2,
+};
 
 /* LED related data
  */
