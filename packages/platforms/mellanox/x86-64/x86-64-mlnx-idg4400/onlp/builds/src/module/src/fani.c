@@ -33,7 +33,7 @@
 
 #define FAN_STATUS_OK  1
 
-#define PERCENTAGE_MIN 60.0
+#define PERCENTAGE_MIN 50.0
 #define PERCENTAGE_MAX 100.0
 #define RPM_MAGIC_MIN  153.0
 #define RPM_MAGIC_MAX  255.0
@@ -44,17 +44,6 @@
 #define PROJECT_NAME
 #define LEN_FILE_NAME 80
 
-#define FAN_RESERVED        0
-#define FAN_1_ON_MAIN_BOARD 1
-#define FAN_2_ON_MAIN_BOARD 2
-#define FAN_3_ON_MAIN_BOARD 3
-#define FAN_4_ON_MAIN_BOARD 4
-#define FAN_5_ON_MAIN_BOARD 5
-#define FAN_6_ON_MAIN_BOARD 6
-#define FAN_7_ON_MAIN_BOARD 7
-#define FAN_8_ON_MAIN_BOARD 8
-#define FAN_1_ON_PSU1       9
-#define FAN_1_ON_PSU2       10
 
 
 const int min_fan_speed[CHASSIS_FAN_COUNT+1] = { 0, /*      Front       ,       Rear */
@@ -123,7 +112,7 @@ static fan_path_T fan_path[] =  /* must map with onlp_fan_id */
     { \
         { ONLP_FAN_ID_CREATE(FAN_##fan_id##_ON_PSU##psu_id), "Chassis PSU-"#psu_id" Fan "#fan_id, 0 }, \
         0x0, \
-        (ONLP_FAN_CAPS_GET_RPM | ONLP_FAN_CAPS_GET_PERCENTAGE), \
+        (ONLP_FAN_CAPS_SET_PERCENTAGE | ONLP_FAN_CAPS_GET_RPM | ONLP_FAN_CAPS_GET_PERCENTAGE), \
         0, \
         0, \
         ONLP_FAN_MODE_INVALID, \
@@ -232,7 +221,7 @@ _onlp_fani_read_fan_eeprom(int local_id, onlp_fan_info_t* info)
 }
 
 static int
-_onlp_fani_info_get_fan(int local_id, onlp_fan_info_t* info)
+onlp_fani_info_get_fan_on_panel(int local_id, onlp_fan_info_t* info)
 {
     int   len = 0, nbytes = 10;
     float percentage  = 0;
@@ -284,7 +273,7 @@ _onlp_fani_info_get_fan(int local_id, onlp_fan_info_t* info)
 }
 
 static int
-_onlp_fani_info_get_fan_on_psu(int local_id, int psu_id, onlp_fan_info_t* info)
+onlp_fani_info_get_fan_on_psu(int local_id, int psu_id, onlp_fan_info_t* info)
 {
     int   len = 0, nbytes = 10;
     char  r_data[10]   = {0};
@@ -478,10 +467,10 @@ onlp_fani_info_get(onlp_oid_t id, onlp_fan_info_t* info)
     switch (local_id)
         {
         case FAN_1_ON_PSU1:
-            rc = _onlp_fani_info_get_fan_on_psu(local_id, PSU1_ID, info);
+            rc = onlp_fani_info_get_fan_on_psu(local_id, PSU1_ID, info);
             break;
         case FAN_1_ON_PSU2:
-            rc = _onlp_fani_info_get_fan_on_psu(local_id, PSU2_ID, info);
+            rc = onlp_fani_info_get_fan_on_psu(local_id, PSU2_ID, info);
             break;
         case FAN_1_ON_MAIN_BOARD:
         case FAN_2_ON_MAIN_BOARD:
@@ -491,7 +480,7 @@ onlp_fani_info_get(onlp_oid_t id, onlp_fan_info_t* info)
         case FAN_6_ON_MAIN_BOARD:
         case FAN_7_ON_MAIN_BOARD:
         case FAN_8_ON_MAIN_BOARD:
-            rc =_onlp_fani_info_get_fan(local_id, info);
+            rc = onlp_fani_info_get_fan_on_panel(local_id, info);
             break;
         default:
             rc = ONLP_STATUS_E_INVALID;
@@ -560,38 +549,12 @@ onlp_fani_rpm_set(onlp_oid_t id, int rpm)
     return ONLP_STATUS_OK;
 }
 
-/*
- * This function sets the fan speed of the given OID as a percentage.
- *
- * This will only be called if the OID has the PERCENTAGE_SET
- * capability.
- *
- * It is optional if you have no fans at all with this feature.
- */
-int
-onlp_fani_percentage_set(onlp_oid_t id, int p)
+static int
+onlp_fani_fan_on_panel_percentage_set(int local_id, int p)
 {
     float pwm = 0.0;
-    int   rv = 0, local_id = 0, nbytes = 10;
+    int   rv = 0, nbytes = 10;
     char  r_data[10]   = {0};
-    onlp_fan_info_t* info = NULL;
-
-    VALIDATE(id);
-    local_id = ONLP_OID_ID_GET(id);
-    info = &linfo[local_id];
-
-    if (0 == (ONLP_FAN_CAPS_SET_PERCENTAGE & info->caps)) {
-        return ONLP_STATUS_E_UNSUPPORTED;
-    }
-
-    /* reject p=0% (p=0%, stop fan) */
-    if (0 == p) {
-        return ONLP_STATUS_E_INVALID;
-    }
-
-    if (p < PERCENTAGE_MIN || p > PERCENTAGE_MAX) {
-        return ONLP_STATUS_E_PARAM;
-    }
 
     /* Set fan speed
        Converting percent to driver value.
@@ -609,6 +572,87 @@ onlp_fani_percentage_set(onlp_oid_t id, int p)
     }
 
     return ONLP_STATUS_OK;
+}
+
+static int
+onlp_fani_fan_on_psu_percentage_set(int local_id, int p)
+{
+    int   rv = 0;
+    char  r_data[100]   = {0};
+
+    snprintf(r_data, sizeof(r_data), "/bsp/fan/psu%d_fan1_speed_set %d", ( local_id - FAN_8_ON_MAIN_BOARD ), p);
+    rv = system(r_data);
+    if (rv < 0) {
+        return ONLP_STATUS_E_INTERNAL;
+    }
+
+    return ONLP_STATUS_OK;
+}
+
+/*
+ * This function sets the fan speed of the given OID as a percentage.
+ *
+ * This will only be called if the OID has the PERCENTAGE_SET
+ * capability.
+ *
+ * It is optional if you have no fans at all with this feature.
+ */
+int
+onlp_fani_percentage_set(onlp_oid_t id, int p)
+{
+    int rc = 0;
+    int local_id = 0;
+    onlp_fan_info_t* info = NULL;
+
+    VALIDATE(id);
+
+    local_id = ONLP_OID_ID_GET(id);
+
+    info = &linfo[local_id];
+
+    if (0 == (ONLP_FAN_CAPS_SET_PERCENTAGE & info->caps)) {
+        return ONLP_STATUS_E_UNSUPPORTED;
+    }
+
+    /* reject p=0% (p=0%, stop fan) */
+    if (0 == p) {
+        return ONLP_STATUS_E_INVALID;
+    }
+
+    if (p < PERCENTAGE_MIN || p > PERCENTAGE_MAX) {
+        return ONLP_STATUS_E_PARAM;
+    }
+
+    switch (local_id)
+        {
+        case FAN_1_ON_PSU1:
+        case FAN_1_ON_PSU2:
+            rc = onlp_fani_fan_on_psu_percentage_set(local_id, p);
+            if ( rc < 0 )
+            {
+                /* It may be a not connected PSU */
+            }
+            break;
+        case FAN_1_ON_MAIN_BOARD:
+        case FAN_2_ON_MAIN_BOARD:
+        case FAN_3_ON_MAIN_BOARD:
+        case FAN_4_ON_MAIN_BOARD:
+        case FAN_5_ON_MAIN_BOARD:
+        case FAN_6_ON_MAIN_BOARD:
+        case FAN_7_ON_MAIN_BOARD:
+        case FAN_8_ON_MAIN_BOARD:
+            rc = onlp_fani_fan_on_panel_percentage_set(local_id, p);
+            if ( rc < 0 )
+            {
+                rc = ONLP_STATUS_E_INTERNAL;
+            }
+            break;
+        default:
+            rc = ONLP_STATUS_E_INVALID;
+            break;
+        }
+
+    return rc;
 }
 
 /*
