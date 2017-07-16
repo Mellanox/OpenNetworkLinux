@@ -34,7 +34,7 @@
 
 /** CPU thermal_threshold */
 typedef enum cpu_thermal_threshold_e {
-    CPU_THERMAL_THRESHOLD_WARNING_DEFAULT  = 87000,
+    CPU_THERMAL_THRESHOLD_WARNING_DEFAULT  = 95000,
     CPU_THERMAL_THRESHOLD_ERROR_DEFAULT    = 100000,
     CPU_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT = 105000,
 } cpu_thermal_threshold_t;
@@ -49,9 +49,9 @@ typedef enum cpu_thermal_threshold_e {
 
 /** NPS thermal_threshold */
 typedef enum nps_thermal_threshold_e {
-    NPS_THERMAL_THRESHOLD_WARNING_DEFAULT  = 105000,
-    NPS_THERMAL_THRESHOLD_ERROR_DEFAULT    = 115000,
-    NPS_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT = 120000, }
+    NPS_THERMAL_THRESHOLD_WARNING_DEFAULT  = 95000,
+    NPS_THERMAL_THRESHOLD_ERROR_DEFAULT    = 100000,
+    NPS_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT = 105000, }
 nps_thermal_threshold_t;
 
 /**
@@ -62,6 +62,36 @@ nps_thermal_threshold_t;
       NPS_THERMAL_THRESHOLD_ERROR_DEFAULT,   \
       NPS_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT }
 
+/** PEX thermal_threshold */
+typedef enum pex_thermal_threshold_e {
+    PEX_THERMAL_THRESHOLD_WARNING_DEFAULT  = 100000,
+    PEX_THERMAL_THRESHOLD_ERROR_DEFAULT    = 105000,
+    PEX_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT = 110000, }
+pex_thermal_threshold_t;
+
+/**
+ * Shortcut for PEX thermal threshold value.
+ */
+#define PEX_THERMAL_THRESHOLD_INIT_DEFAULTS  \
+    { PEX_THERMAL_THRESHOLD_WARNING_DEFAULT, \
+      PEX_THERMAL_THRESHOLD_ERROR_DEFAULT,   \
+      PEX_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT }
+
+/** TCAM thermal_threshold */
+typedef enum tcam_thermal_threshold_e {
+    TCAM_THERMAL_THRESHOLD_WARNING_DEFAULT  = 100000,
+    TCAM_THERMAL_THRESHOLD_ERROR_DEFAULT    = 105000,
+    TCAM_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT = 110000, }
+tcam_thermal_threshold_t;
+
+/**
+ * Shortcut for TCAM thermal threshold value.
+ */
+#define TCAM_THERMAL_THRESHOLD_INIT_DEFAULTS  \
+    { TCAM_THERMAL_THRESHOLD_WARNING_DEFAULT, \
+      TCAM_THERMAL_THRESHOLD_ERROR_DEFAULT,   \
+      TCAM_THERMAL_THRESHOLD_SHUTDOWN_DEFAULT }
+
 #define VALIDATE(_id)                           \
     do {                                        \
         if(!ONLP_OID_IS_THERMAL(_id)) {         \
@@ -69,20 +99,21 @@ nps_thermal_threshold_t;
         }                                       \
     } while(0)
 
+
 static char* last_path[] =  /* must map with onlp_thermal_id */
 {
     "reserved",
     "cpu_core0",
     "cpu_core1",
-	"cpu_core2",
-	"cpu_core3",
+    "cpu_core2",
+    "cpu_core3",
     "cpu_pack",
-	"front",
-	"rear",
-	"pex",
-	"nps",
-	"tcam",
-	"mnb",
+    "front",
+    "rear",
+    "pex",
+    "nps",
+    "tcam",
+    "mnb",
     "psu1",
     "psu2"
 };
@@ -90,55 +121,55 @@ static char* last_path[] =  /* must map with onlp_thermal_id */
 /* Static values */
 static onlp_thermal_info_t linfo[] = {
     { }, /* Not used */
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_0), "CPU Core 0", 0},
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_0), "CPU Core 0", 0},
             ONLP_THERMAL_STATUS_PRESENT,
             ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
         },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_1), "CPU Core 1", 0},
+        { { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_1), "CPU Core 1", 0},
             ONLP_THERMAL_STATUS_PRESENT,
             ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
         },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_2), "CPU Core 2", 0},
-	        ONLP_THERMAL_STATUS_PRESENT,
-			ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
-		},
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_3), "CPU Core 3", 0},
-			ONLP_THERMAL_STATUS_PRESENT,
-			ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
-		},
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_PACK), "CPU Pack", 0},
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_2), "CPU Core 2", 0},
             ONLP_THERMAL_STATUS_PRESENT,
             ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
         },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_FRONT), "Front panel Thermal Sensor", 0},
-			ONLP_THERMAL_STATUS_PRESENT,
-			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
-	    },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_REAR) , "Rear panel Thermal Sensor", 0},
-			ONLP_THERMAL_STATUS_PRESENT,
-			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
-	    },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_PEX) , "PCIe switch PEX Thermal Sensor", 0},
-			ONLP_THERMAL_STATUS_PRESENT,
-			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
-		},
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_NPS) , "NPS Thermal Sensor", 0},
-			ONLP_THERMAL_STATUS_PRESENT,
-			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, NPS_THERMAL_THRESHOLD_INIT_DEFAULTS
-	    },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_TCAM) , "TCAM chip Thermal Sensor", 0},
-			ONLP_THERMAL_STATUS_PRESENT,
-			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
-		 },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_MNB) , "MNG board Thermal Sensor", 0},
-			ONLP_THERMAL_STATUS_PRESENT,
-			ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
-		},
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_ON_PSU1), "PSU-1 Thermal Sensor 1", ONLP_PSU_ID_CREATE(PSU1_ID)},
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_CORE_3), "CPU Core 3", 0},
+            ONLP_THERMAL_STATUS_PRESENT,
+            ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
+        },
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_CPU_PACK), "CPU Pack", 0},
+            ONLP_THERMAL_STATUS_PRESENT,
+            ONLP_THERMAL_CAPS_ALL, 0, CPU_THERMAL_THRESHOLD_INIT_DEFAULTS
+        },
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_FRONT), "Front panel Thermal Sensor", 0},
             ONLP_THERMAL_STATUS_PRESENT,
             ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
         },
-	{ { ONLP_THERMAL_ID_CREATE(THERMAL_ON_PSU2), "PSU-2 Thermal Sensor 1", ONLP_PSU_ID_CREATE(PSU2_ID)},
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_REAR) , "Rear panel Thermal Sensor", 0},
+            ONLP_THERMAL_STATUS_PRESENT,
+            ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
+        },
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_PEX) , "PCIe switch PEX Thermal Sensor", 0},
+            ONLP_THERMAL_STATUS_PRESENT,
+            ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, PEX_THERMAL_THRESHOLD_INIT_DEFAULTS
+        },
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_NPS) , "NPS Thermal Sensor", 0},
+            ONLP_THERMAL_STATUS_PRESENT,
+            ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, NPS_THERMAL_THRESHOLD_INIT_DEFAULTS
+        },
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_TCAM) , "TCAM chip Thermal Sensor", 0},
+            ONLP_THERMAL_STATUS_PRESENT,
+            ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, TCAM_THERMAL_THRESHOLD_INIT_DEFAULTS
+         },
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_MNB) , "MNG board Thermal Sensor", 0},
+            ONLP_THERMAL_STATUS_PRESENT,
+            ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
+        },
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_ON_PSU1), "PSU-1 Thermal Sensor 1", ONLP_PSU_ID_CREATE(PSU1_ID)},
+            ONLP_THERMAL_STATUS_PRESENT,
+            ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
+        },
+    { { ONLP_THERMAL_ID_CREATE(THERMAL_ON_PSU2), "PSU-2 Thermal Sensor 1", ONLP_PSU_ID_CREATE(PSU2_ID)},
             ONLP_THERMAL_STATUS_PRESENT,
             ONLP_THERMAL_CAPS_GET_TEMPERATURE, 0, {0,0,0}
         }
@@ -176,10 +207,10 @@ onlp_thermali_info_get(onlp_oid_t id, onlp_thermal_info_t* info)
     *info = linfo[local_id];
 
     rv = onlp_file_read((uint8_t*)r_data, sizeof(r_data), &len, "%s/%s",
-    		prefix_path, last_path[local_id]);
-	if (rv < 0) {
-		return ONLP_STATUS_E_INTERNAL;
-	}
+            prefix_path, last_path[local_id]);
+    if (rv < 0) {
+        return ONLP_STATUS_E_INTERNAL;
+    }
 
     info->mcelsius = atoi(r_data) / temp_base;
 

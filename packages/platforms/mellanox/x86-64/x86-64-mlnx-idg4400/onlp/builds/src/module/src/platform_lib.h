@@ -44,32 +44,16 @@
 #define PSU_POWER_PREFIX "/bsp/power/psu%d_%s"
 #define IDPROM_PATH "/bsp/eeprom/%s%d_info"
 
+
+/***************** PSU related data *****************/
 typedef enum psu_type {
     PSU_TYPE_UNKNOWN,
     PSU_TYPE_AC_F2B,
     PSU_TYPE_AC_B2F
 } psu_type_t;
 
-enum onlp_thermal_id
-{
-    THERMAL_RESERVED = 0,
-    THERMAL_CPU_CORE_0,
-    THERMAL_CPU_CORE_1,
-	THERMAL_CPU_CORE_2,
-	THERMAL_CPU_CORE_3,
-    THERMAL_CPU_PACK,
-	THERMAL_FRONT,
-	THERMAL_REAR,
-	THERMAL_PEX,
-	THERMAL_NPS,
-	THERMAL_TCAM,
-	THERMAL_MNB,
-    THERMAL_ON_PSU1,
-    THERMAL_ON_PSU2,
-};
 
-/* LED related data
- */
+/***************** LED related data *****************/
 enum onlp_led_id
 {
     LED_RESERVED = 0,
@@ -84,7 +68,39 @@ enum onlp_led_id
 };
 
 
-/***************** Fans *****************/
+/***************** Thermal related data *****************/
+enum onlp_thermal_id
+{
+    THERMAL_RESERVED = 0,
+    THERMAL_CPU_CORE_0,
+    THERMAL_CPU_CORE_1,
+    THERMAL_CPU_CORE_2,
+    THERMAL_CPU_CORE_3,
+    THERMAL_CPU_PACK,
+    THERMAL_FRONT,
+    THERMAL_REAR,
+    THERMAL_PEX,
+    THERMAL_NPS,
+    THERMAL_TCAM,
+    THERMAL_MNB,
+    THERMAL_ON_PSU1,
+    THERMAL_ON_PSU2,
+};
+
+
+/***************** Fans related data *****************/
+#define FAN_RESERVED        0
+#define FAN_1_ON_MAIN_BOARD 1
+#define FAN_2_ON_MAIN_BOARD 2
+#define FAN_3_ON_MAIN_BOARD 3
+#define FAN_4_ON_MAIN_BOARD 4
+#define FAN_5_ON_MAIN_BOARD 5
+#define FAN_6_ON_MAIN_BOARD 6
+#define FAN_7_ON_MAIN_BOARD 7
+#define FAN_8_ON_MAIN_BOARD 8
+#define FAN_1_ON_PSU1       9
+#define FAN_1_ON_PSU2       10
+
 #define FRONT_FANS_MIN_SPEED            6300
 #define FRONT_FANS_MAX_SPEED            21000
 #define REAR_FANS_MIN_SPEED             5400
@@ -99,6 +115,7 @@ extern const int max_fan_speed[CHASSIS_FAN_COUNT+1];
 
 #define MIN_LIMIT_FRONT_FAN_RPM       FRONT_FANS_MIN_SPEED * 0.9  // 6300 -= 10 %
 #define MIN_LIMIT_REAR_FAN_RPM        REAR_FANS_MIN_SPEED * 0.9 // 5400 -= 10 %
+
 
 
 psu_type_t get_psu_type(int id, char* modelname, int modelname_len);

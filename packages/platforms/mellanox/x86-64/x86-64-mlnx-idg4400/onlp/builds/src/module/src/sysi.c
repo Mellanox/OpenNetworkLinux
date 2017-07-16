@@ -49,7 +49,13 @@
 #define PREFIX_PATH_ON_CPLD_DEV       "/bsp/cpld"
 #define NUM_OF_CPLD                   3
 
+#define MIN_FAN_SPEED                 60 /* TODO: Minimum fan speed should be dynamically updated according to the dynamic minimum fan speed table */
+
 extern int thermal_algorithm_enable;
+
+static int fans_speed_changed_in_last_5_minutes = 0; /* Should initialized to 30 when changing the fan speed ( (60[sec] * 5[minutes]) / 10[secondes every period] )*/
+
+static int onlp_sysi_previous_thermal_sensor_value[ THERMAL_ON_PSU2 + 1 ] = { 0 }; /* must map with onlp_thermal_id */
 
 static char arr_cplddev_name[NUM_OF_CPLD][30] =
 {
@@ -249,41 +255,381 @@ onlp_sysi_platform_manage_leds(void)
     return ONLP_STATUS_OK;
 }
 
+int onlp_sysi_store_current_thermal_values( int dest_thermal_values[] )
+{
+    int rv = ONLP_STATUS_OK;
+    onlp_thermal_info_t thermal_info;
+    onlp_oid_t local_id;
+
+    for ( local_id = THERMAL_CPU_CORE_0; local_id <= THERMAL_ON_PSU2; local_id++ )
+    {
+        rv = onlp_thermali_info_get( ONLP_THERMAL_ID_CREATE( local_id ), &thermal_info );
+        if (rv < 0)
+        {
+            dest_thermal_values[ local_id ] = 0;
+            continue;
+        }
+        dest_thermal_values[ local_id ] = thermal_info.mcelsius;
+    }
+
+    return ONLP_STATUS_OK;
+}
+
+int onlp_sysi_thermal_algorithm_init( void )
+{
+    /* TODO: Should enhance this function and call it. Should read the thermal algorithm control file in this function.*/
+    int rv = ONLP_STATUS_OK;
+    rv = onlp_sysi_store_current_thermal_values( onlp_sysi_previous_thermal_sensor_value );
+    if (rv < 0)
+    {
+        return rv;
+    }
+
+    return rv;
+}
+
+typedef struct onlp_sysi_thermal_range {
+    /* low range limit temperature in milli-celsius */
+    int low_limit;
+    /* high range limit temperature in milli-celsius */
+    int high_limit;
+} onlp_sysi_thermal_range;
+
+typedef struct onlp_sysi_thermal_sensor_ranges {
+    onlp_sysi_thermal_range low_range;
+    onlp_sysi_thermal_range in_range;
+    onlp_sysi_thermal_range high_range;
+    onlp_sysi_thermal_range very_high_range;
+    onlp_sysi_thermal_range critical_range;
+} onlp_sysi_thermal_sensor_ranges;
+
+static const onlp_sysi_thermal_sensor_ranges thermal_sensors_ranges_values[ THERMAL_ON_PSU2 + 1 ] = /* must map with onlp_thermal_id */
+{
+        /* THERMAL_RESERVED */
+        { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } },
+        /* THERMAL_CPU_CORE_0 */
+        /* low_range  ,    in_range     ,   high_range    ,  very_high_range,   critical_range */
+        { { 0, 60000 }, { 60000, 65000 }, { 65000, 70000 }, { 70000, 90000 }, { 90000, 105000 } },
+        /* THERMAL_CPU_CORE_1 */
+        { { 0, 60000 }, { 60000, 65000 }, { 65000, 70000 }, { 70000, 90000 }, { 90000, 105000 } },
+        /* THERMAL_CPU_CORE_2 */
+        { { 0, 60000 }, { 60000, 65000 }, { 65000, 70000 }, { 70000, 90000 }, { 90000, 105000 } },
+        /* THERMAL_CPU_CORE_3 */
+        { { 0, 60000 }, { 60000, 65000 }, { 65000, 70000 }, { 70000, 90000 }, { 90000, 105000 } },
+        /* THERMAL_CPU_PACK */
+        { { 0, 60000 }, { 60000, 65000 }, { 65000, 70000 }, { 70000, 90000 }, { 90000, 105000 } },
+        /* THERMAL_FRONT */
+        { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } },
+        /* THERMAL_REAR */
+        { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } },
+        /* THERMAL_PEX */
+        { { 0, 65000 }, { 65000, 70000 }, { 70000, 75000 }, { 75000, 95000 }, { 95000, 110000 } },
+        /* THERMAL_NPS */
+        { { 0, 60000 }, { 60000, 65000 }, { 65000, 70000 }, { 70000, 90000 }, { 90000, 105000 } },
+        /* THERMAL_TCAM */
+        { { 0, 50000 }, { 50000, 55000 }, { 55000, 60000 }, { 60000, 80000 }, { 80000, 95000 } },
+        /* THERMAL_MNB */
+        { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } },
+        /* THERMAL_ON_PSU1 */
+        { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } },
+        /* THERMAL_ON_PSU2 */
+        { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } }
+};
+
+int onlp_sysi_update_fans_speed_percentage( int new_speed_percentage )
+{
+    int rv = ONLP_STATUS_OK, local_psu_fan_id;
+    onlp_fan_info_t fan_info;
+
+    rv = onlp_fani_percentage_set( ONLP_FAN_ID_CREATE(FAN_1_ON_MAIN_BOARD), new_speed_percentage );
+    if (rv < 0)
+    {
+        return rv;
+    }
+
+    /* Update PSU fans speed if needed */
+    for ( local_psu_fan_id = FAN_1_ON_PSU1; local_psu_fan_id <= FAN_1_ON_PSU2; local_psu_fan_id++ )
+    {
+        rv = onlp_fani_info_get( ONLP_FAN_ID_CREATE( local_psu_fan_id ), &fan_info );
+        if (rv < 0)
+        {
+            continue;
+        }
+
+        if ( fan_info.percentage < new_speed_percentage )
+        {
+            rv = onlp_fani_percentage_set( ONLP_FAN_ID_CREATE(local_psu_fan_id), new_speed_percentage );
+            if (rv < 0)
+            {
+                return rv;
+            }
+        }
+    }
+
+    fans_speed_changed_in_last_5_minutes = 30;
+    rv = onlp_sysi_store_current_thermal_values( onlp_sysi_previous_thermal_sensor_value );
+    if (rv < 0)
+    {
+        return rv;
+    }
+
+    return ONLP_STATUS_OK;
+}
+
+int onlp_sysi_cold_algorithm( void )
+{
+    int rv = ONLP_STATUS_OK;
+    onlp_fan_info_t fan_info;
+
+    if ( fans_speed_changed_in_last_5_minutes == 0 )
+    {
+        rv = onlp_fani_info_get(ONLP_FAN_ID_CREATE(FAN_1_ON_MAIN_BOARD), &fan_info);
+        if (rv < 0)
+        {
+            return rv;
+        }
+        if ( MIN_FAN_SPEED < fan_info.percentage )
+        {
+            rv = onlp_sysi_update_fans_speed_percentage( fan_info.percentage * 0.9 );
+            if (rv < 0)
+            {
+                return rv;
+            }
+        }
+    }
+
+    return rv;
+}
+
+int onlp_sysi_hot_algorithm( )
+{
+    int rv = ONLP_STATUS_OK;
+    onlp_fan_info_t fan_info;
+    onlp_thermal_info_t thermal_info;
+    onlp_oid_t local_id;
+    int all_fans_speed_percentage, update_fans_speed = 0;
+
+    rv = onlp_fani_info_get(ONLP_FAN_ID_CREATE(FAN_1_ON_MAIN_BOARD), &fan_info);
+    if (rv < 0)
+    {
+        return rv;
+    }
+    if ( fan_info.percentage >= 100 )
+    {
+        return rv;
+    }
+    all_fans_speed_percentage = fan_info.percentage;
+
+    for ( local_id = THERMAL_CPU_CORE_0; local_id <= THERMAL_ON_PSU2; local_id++ )
+    {
+        rv = onlp_thermali_info_get( ONLP_THERMAL_ID_CREATE( local_id ), &thermal_info );
+        if (rv < 0)
+        {
+            continue;
+        }
+
+        if ( ( thermal_info.mcelsius - onlp_sysi_previous_thermal_sensor_value[ local_id ] ) > 4000 )
+        {
+            all_fans_speed_percentage *= 1.20;
+            update_fans_speed = 1;
+            break;
+        }
+    }
+
+    if ( !update_fans_speed )
+    {
+        if ( fans_speed_changed_in_last_5_minutes == 0 )
+        {
+            all_fans_speed_percentage *= 1.10;
+            update_fans_speed = 1;
+        }
+    }
+
+    if ( update_fans_speed )
+    {
+        if ( all_fans_speed_percentage > 100 )
+        {
+            all_fans_speed_percentage = 100;
+        }
+        rv = onlp_sysi_update_fans_speed_percentage( all_fans_speed_percentage );
+        if (rv < 0)
+        {
+            return rv;
+        }
+    }
+
+    return ONLP_STATUS_OK;
+}
+
+typedef enum onlp_sysi_thermal_range_status
+{
+    THERMAL_IN_LOW_RANGE = 0,
+    THERMAL_IN_DESIRED_RANGE,
+    THERMAL_IN_HIGH_RANGE,
+    THERMAL_IN_VERY_HIGH_RANGE,
+    THERMAL_IN_CRITICAL_RANGE,
+} onlp_sysi_thermal_range_status;
 
 int onlp_sysi_platform_manage_fans(void)
 {
-    int rv = 0;
-    onlp_fan_info_t info;
+    int rv = ONLP_STATUS_OK;
+    onlp_fan_info_t fan_info;
+    onlp_thermal_info_t thermal_info;
     onlp_oid_t local_id;
-    int all_fans_speed_percentage = 60;
+    int all_fans_speed_percentage = 60, update_fans_speed = 0;
+    onlp_sysi_thermal_range_status all_thermals_status = THERMAL_IN_LOW_RANGE;
 
     if ( thermal_algorithm_enable )
     {
-        for ( local_id = 1; local_id <= 8; local_id++ )
+        if ( fans_speed_changed_in_last_5_minutes > 0 )
         {
-            rv = onlp_fani_info_get(ONLP_FAN_ID_CREATE(local_id), &info);
-            if (rv < 0) {
+            fans_speed_changed_in_last_5_minutes--;
+        }
+
+        /* Check the fans status */
+        for ( local_id = FAN_1_ON_MAIN_BOARD; local_id <= FAN_8_ON_MAIN_BOARD; local_id++ )
+        {
+            rv = onlp_fani_info_get(ONLP_FAN_ID_CREATE(local_id), &fan_info);
+            if (rv < 0)
+            {
                 return rv;
             }
             else
             {
-                if ( ! ( info.status & 1 ) )
+                if ( ! ( fan_info.status & 1 ) )
                 {
                     /* Fan is not present */
-                    all_fans_speed_percentage = 100;
+                    all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
                     break;
                 }
 
-                if ( ! IS_FAN_RPM_IN_THE_VALID_RANGE( local_id, info.rpm ) )
+                if ( ! IS_FAN_RPM_IN_THE_VALID_RANGE( local_id, fan_info.rpm ) )
                 {
-                    all_fans_speed_percentage = 100;
+                    all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
                     break;
                 }
             }
         }
 
-        onlp_fani_percentage_set( ONLP_FAN_ID_CREATE(1), all_fans_speed_percentage );
+        /* Check the thermal sensors status */
+        for ( local_id = THERMAL_CPU_CORE_0; local_id <= THERMAL_ON_PSU2; local_id++ )
+        {
+            rv = onlp_thermali_info_get( ONLP_THERMAL_ID_CREATE( local_id ), &thermal_info );
+            if (rv < 0)
+            {
+                continue;
+            }
+
+            if ( thermal_info.thresholds.warning > 0 )
+            {
+                if ( thermal_info.mcelsius > thermal_info.thresholds.warning )
+                {
+                    /* TODO: send Warnings as needed */
+                }
+            }
+
+            if ( thermal_info.thresholds.shutdown > 0 )
+            {
+                if ( thermal_info.mcelsius > thermal_info.thresholds.shutdown )
+                {
+                    /* TODO: shutdown the system */
+                }
+            }
+
+            if ( ( ( thermal_sensors_ranges_values[ local_id ].critical_range.high_limit - thermal_sensors_ranges_values[ local_id ].critical_range.low_limit ) > 0 ) &&
+                      ( ( thermal_sensors_ranges_values[ local_id ].critical_range.low_limit < thermal_info.mcelsius ) && ( thermal_info.mcelsius < thermal_sensors_ranges_values[ local_id ].critical_range.high_limit ) ) )
+            {
+                if ( all_thermals_status < THERMAL_IN_CRITICAL_RANGE )
+                {
+                    all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
+                }
+            }
+            else if ( ( ( thermal_sensors_ranges_values[ local_id ].very_high_range.high_limit - thermal_sensors_ranges_values[ local_id ].very_high_range.low_limit ) > 0 ) &&
+                      ( ( thermal_sensors_ranges_values[ local_id ].very_high_range.low_limit < thermal_info.mcelsius ) && ( thermal_info.mcelsius < thermal_sensors_ranges_values[ local_id ].very_high_range.high_limit ) ) )
+            {
+                if ( all_thermals_status < THERMAL_IN_VERY_HIGH_RANGE )
+                {
+                    all_thermals_status = THERMAL_IN_VERY_HIGH_RANGE;
+                }
+            }
+            else if ( ( ( thermal_sensors_ranges_values[ local_id ].high_range.high_limit - thermal_sensors_ranges_values[ local_id ].high_range.low_limit ) > 0 ) &&
+                      ( ( thermal_sensors_ranges_values[ local_id ].high_range.low_limit < thermal_info.mcelsius ) && ( thermal_info.mcelsius < thermal_sensors_ranges_values[ local_id ].high_range.high_limit ) ) )
+            {
+                if ( all_thermals_status < THERMAL_IN_HIGH_RANGE )
+                {
+                    all_thermals_status = THERMAL_IN_HIGH_RANGE;
+                }
+            }
+            else if ( ( ( thermal_sensors_ranges_values[ local_id ].in_range.high_limit - thermal_sensors_ranges_values[ local_id ].in_range.low_limit ) > 0 ) &&
+                      ( ( thermal_sensors_ranges_values[ local_id ].in_range.low_limit < thermal_info.mcelsius ) && ( thermal_info.mcelsius < thermal_sensors_ranges_values[ local_id ].in_range.high_limit ) ) )
+            {
+                if ( all_thermals_status < THERMAL_IN_DESIRED_RANGE )
+                {
+                    all_thermals_status = THERMAL_IN_DESIRED_RANGE;
+                }
+            }
+            else if ( ( ( thermal_sensors_ranges_values[ local_id ].low_range.high_limit - thermal_sensors_ranges_values[ local_id ].low_range.low_limit ) > 0 ) &&
+                      ( ( thermal_info.mcelsius < thermal_sensors_ranges_values[ local_id ].low_range.high_limit ) ) )
+            {
+                if ( all_thermals_status < THERMAL_IN_LOW_RANGE )
+                {
+                    all_thermals_status = THERMAL_IN_LOW_RANGE;
+                }
+            }
+        }
+
+        switch ( all_thermals_status )
+        {
+            case THERMAL_IN_LOW_RANGE:
+                /* Do cold algorithm */
+                rv = onlp_sysi_cold_algorithm();
+                if (rv < 0)
+                {
+                    return rv;
+                }
+                break;
+
+            case THERMAL_IN_DESIRED_RANGE:
+                /* do nothing */
+                break;
+
+            case THERMAL_IN_HIGH_RANGE:
+                /* enforce minimum fan speed */
+                if ( fan_info.percentage < MIN_FAN_SPEED )
+                {
+                    all_fans_speed_percentage = MIN_FAN_SPEED;
+                    update_fans_speed = 1;
+                }
+                break;
+
+            case THERMAL_IN_VERY_HIGH_RANGE:
+                /* Do hot algorithm */
+                rv = onlp_sysi_hot_algorithm();
+                if (rv < 0)
+                {
+                    return rv;
+                }
+                break;
+
+            case THERMAL_IN_CRITICAL_RANGE:
+                /* set fan speed to 100% */
+                if ( fan_info.percentage < 100 )
+                {
+                    all_fans_speed_percentage = 100;
+                    update_fans_speed = 1;
+                }
+                break;
+        }
+
+        if ( update_fans_speed )
+        {
+            rv = onlp_sysi_update_fans_speed_percentage( all_fans_speed_percentage );
+            if (rv < 0)
+            {
+                return rv;
+            }
+        }
     }
 
-    return rv;
+    return ONLP_STATUS_OK;
 }
