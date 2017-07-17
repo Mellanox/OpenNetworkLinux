@@ -66,10 +66,11 @@ platform_int_register(int index, char* desc, int value)
     int* v = aim_zmalloc(sizeof(value));
     *v = value;
 
-    netsnmp_register_int_instance(desc,
-                                  tree,
-                                  OID_LENGTH(tree),
-                                  v, NULL);
+    netsnmp_register_watched_scalar2(
+               netsnmp_create_handler_registration(
+                     desc, NULL, tree, OID_LENGTH(tree), HANDLER_CAN_RWRITE),
+               netsnmp_create_watcher_info(
+                   (void *)v, sizeof(int), ASN_INTEGER, WATCHER_FIXED_SIZE));
 }
 
 static void
@@ -83,9 +84,9 @@ resource_int_register(int index, const char* desc,
         netsnmp_create_handler_registration(desc, handler,
                                             tree, OID_LENGTH(tree),
                                             HANDLER_CAN_RONLY);
-    if (netsnmp_register_instance(reg) != MIB_REGISTERED_OK) {
-        AIM_LOG_ERROR("registering handler for %s failed", desc);
-    }
+    if (netsnmp_register_scalar(reg) != MIB_REGISTERED_OK) {
+       AIM_LOG_ERROR("registering handler for %s failed", desc);
+   }
 }
 
 
