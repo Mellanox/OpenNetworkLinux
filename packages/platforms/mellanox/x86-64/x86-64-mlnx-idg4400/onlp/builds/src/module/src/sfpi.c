@@ -40,10 +40,11 @@ static char sfp_node_path[MAX_SFP_PATH] = {0};
 #define NUM_OF_SFP_PORTS                  12
 #define SFP_EEPROM_FILE_SIZE              784 // 256 * 3 (each number is hex string + space) + 16 ('\n' char for each row)
 
-/* Module type definitions - 100GE BASED AOC cable patch */
+/* Module type definitions - patches for 100GE BASED AOC and QSFP_PLUS A1 & A2 cables */
 #define SFF_MODULE_TYPE_ADDR_0                           0
 #define SFF_MODULE_TYPE_ADDR_128                         128
 #define SFF_MODULE_TYPE_QSFP_PLUS_VAL                    0xd
+#define SFF_MODULE_TYPE_QSFP_PLUS_OLD_VAL                0xe
 #define SFF_MODULE_TYPE_QSFP28_VAL                       0x11
 #define SFF_MODULE_COMPLIANCE_CODES_ADDR                 131
 #define SFF_CC131_EXTENDED_BIT                           0x80
@@ -200,6 +201,18 @@ onlp_sfpi_eeprom_read(int port, uint8_t data[256])
        data[SFF_MODULE_TYPE_ADDR_128] = SFF_MODULE_TYPE_QSFP28_VAL;
        /* Update eeprom checksum */
        data[SFF_EEPROM_CHECKSUM_ADDR] += (SFF_MODULE_TYPE_QSFP28_VAL - SFF_MODULE_TYPE_QSFP_PLUS_VAL);
+    }
+
+    /* Patch for QSFP_PLUS A1 & A2 cables. When below condition is TRUE, set module type to QSFP_PLUS:
+     * - Module type on both identifiers (byte 0 and byte 128) is 0xe (SFF_MODULE_TYPE_QSFP_PLUS_OLD_VAL)
+     */
+    if(data[SFF_MODULE_TYPE_ADDR_128] == SFF_MODULE_TYPE_QSFP_PLUS_OLD_VAL 
+       && (data[SFF_MODULE_TYPE_ADDR_0] == SFF_MODULE_TYPE_QSFP_PLUS_OLD_VAL ))
+    {
+       data[SFF_MODULE_TYPE_ADDR_0] = SFF_MODULE_TYPE_QSFP_PLUS_VAL;
+       data[SFF_MODULE_TYPE_ADDR_128] = SFF_MODULE_TYPE_QSFP_PLUS_VAL;
+       /* Update eeprom checksum */
+       data[SFF_EEPROM_CHECKSUM_ADDR] += (SFF_MODULE_TYPE_QSFP_PLUS_VAL - SFF_MODULE_TYPE_QSFP_PLUS_OLD_VAL);
     }
 
     return ONLP_STATUS_OK;
