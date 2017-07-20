@@ -60,6 +60,8 @@ const int max_fan_speed[CHASSIS_FAN_COUNT+1] = { 0, /*      Front       ,       
 
 int thermal_algorithm_enable = 1;
 
+extern int onlp_sysi_thermal_algorithm_init();
+
 typedef struct fan_path_S
 {
     char status[LEN_FILE_NAME];
@@ -450,6 +452,13 @@ onlp_fani_init(void)
             }
         }
     }
+
+    rv = onlp_sysi_thermal_algorithm_init();
+    if (rv < 0)
+    {
+        return ONLP_STATUS_E_INTERNAL;
+    }
+
     return ONLP_STATUS_OK;
 }
 

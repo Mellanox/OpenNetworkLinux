@@ -275,14 +275,54 @@ int onlp_sysi_store_current_thermal_values( int dest_thermal_values[] )
     return ONLP_STATUS_OK;
 }
 
+int onlp_sysi_io_write_register(int base_addr, int offset, int len, int value)
+{
+    int   rv = 0;
+    char  r_data[100]   = {0};
+
+    snprintf(r_data, sizeof(r_data), "iorw -b %d -l%d -w -o %d -v %d", base_addr, len, offset, value);
+    rv = system(r_data);
+    if (rv < 0) 
+    {
+        return ONLP_STATUS_E_INTERNAL;
+    }
+
+    return ONLP_STATUS_OK;
+}
+
 int onlp_sysi_thermal_algorithm_init( void )
 {
-    /* TODO: Should enhance this function and call it. Should read the thermal algorithm control file in this function.*/
+    /* TODO: Should read the thermal algorithm control file in this function.*/
     int rv = ONLP_STATUS_OK;
     rv = onlp_sysi_store_current_thermal_values( onlp_sysi_previous_thermal_sensor_value );
     if (rv < 0)
     {
         return rv;
+    }
+
+    if ( thermal_algorithm_enable )
+    {
+        /* Initialize the watchdog timer */
+        rv = onlp_sysi_io_write_register(0x2500, 0xC9, 1, 14); /* Configure the watchdog timer to 2^14 = 16384 milliseconds */
+        if (rv < 0)
+        {
+            return rv;
+        }
+        rv = onlp_sysi_io_write_register(0x2500, 0xCB, 1, 0x90); /* Bitmap: Configure the watchdog action to FULL_SPEED_FANS (bit 4), & the increment counter (bit 7) */
+        if (rv < 0)
+        {
+            return rv;
+        }
+        rv = onlp_sysi_io_write_register(0x2500, 0xC8, 1, 0xEE); /* Bitmap: Configure the watchdog clear protective: bit 0 is WD1 timer clear & bit 4 is WD1 counter clear (1 = bit is write protected) */
+        if (rv < 0)
+        {
+            return rv;
+        }
+        rv = onlp_sysi_io_write_register(0x2500, 0xC7, 1, 0x11); /* Bitmap: trigger the watchdog clear: bit 0 is WD1 timer clear & bit 4 is WD1 counter clear (1 = clear) */
+        if (rv < 0)
+        {
+            return rv;
+        }
     }
 
     return rv;
@@ -481,6 +521,13 @@ int onlp_sysi_platform_manage_fans(void)
 
     if ( thermal_algorithm_enable )
     {
+        /* reset the watchdog timer */
+        rv = onlp_sysi_io_write_register(0x2500, 0xC7, 1, 0x1); /* Bitmap: trigger the watchdog clear: bit 0 is WD1 timer clear (1 = clear) */
+        if (rv < 0)
+        {
+            return rv;
+        }
+
         if ( fans_speed_changed_in_last_5_minutes > 0 )
         {
             fans_speed_changed_in_last_5_minutes--;
@@ -520,19 +567,16 @@ int onlp_sysi_platform_manage_fans(void)
                 continue;
             }
 
-            if ( thermal_info.thresholds.warning > 0 )
-            {
-                if ( thermal_info.mcelsius > thermal_info.thresholds.warning )
-                {
-                    /* TODO: send Warnings as needed */
-                }
-            }
-
             if ( thermal_info.thresholds.shutdown > 0 )
             {
                 if ( thermal_info.mcelsius > thermal_info.thresholds.shutdown )
                 {
-                    /* TODO: shutdown the system */
+                    /* Shutdown the system TODO: Send SNMP trap */
+                    rv = onlp_sysi_io_write_register(0x2500, 0x2e, 1, 0x0);
+                    if (rv < 0)
+                    {
+                        return rv;
+                    }
                 }
             }
 
