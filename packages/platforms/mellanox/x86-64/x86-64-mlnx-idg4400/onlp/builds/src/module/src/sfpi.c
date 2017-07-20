@@ -50,6 +50,7 @@ static char sfp_node_path[MAX_SFP_PATH] = {0};
 #define SFF_CC131_EXTENDED_BIT                           0x80
 #define SFF_CC131_EXTENDED_ADDR                          192
 #define SFF_CC192_100GE_AOC_TYPE_VAL                     0x01
+#define SFF_CC192_100GBASE_CR4_TYPE_VAL                  0x0b
 #define SFF_EEPROM_CHECKSUM_ADDR                         191
 
 static int
@@ -188,14 +189,14 @@ onlp_sfpi_eeprom_read(int port, uint8_t data[256])
        return -1;
     }
 
-    /* Patch for 100GE AOC. When below conditions are TRUE, set module type to QSFP28:
+    /* Patch for 100GE AOC and for 100GBASE CR4. When below conditions are TRUE, set module type to QSFP28:
      * - Module type is QSFP_PLUS 
      * - Extended_code bit is set
      * - Extended compliance code is 100GE_AOC type
      */
     if(data[SFF_MODULE_TYPE_ADDR_128] == SFF_MODULE_TYPE_QSFP_PLUS_VAL 
        && (data[SFF_MODULE_COMPLIANCE_CODES_ADDR] & SFF_CC131_EXTENDED_BIT )
-       && (data[SFF_CC131_EXTENDED_ADDR] == SFF_CC192_100GE_AOC_TYPE_VAL ) )
+       && ( (data[SFF_CC131_EXTENDED_ADDR] == SFF_CC192_100GE_AOC_TYPE_VAL) || (data[SFF_CC131_EXTENDED_ADDR] == SFF_CC192_100GBASE_CR4_TYPE_VAL) ) )
     {
        data[SFF_MODULE_TYPE_ADDR_0] = SFF_MODULE_TYPE_QSFP28_VAL;
        data[SFF_MODULE_TYPE_ADDR_128] = SFF_MODULE_TYPE_QSFP28_VAL;
