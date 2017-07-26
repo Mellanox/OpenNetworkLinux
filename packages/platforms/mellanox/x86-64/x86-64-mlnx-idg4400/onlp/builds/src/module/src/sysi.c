@@ -148,7 +148,7 @@ onlp_sysi_onie_info_get(onlp_onie_info_t* onie)
 int
 onlp_sysi_platform_manage_leds(void)
 {
-	int fan_number, thermal_number, psu_number;
+	int rv = ONLP_STATUS_OK, fan_number, thermal_number, psu_number, in_shutdown_state;
 	onlp_psu_info_t pi;
 	onlp_led_mode_t mode;
 	enum onlp_led_id fan_led_id[4] = { LED_FAN1, LED_FAN2, LED_FAN3, LED_FAN4 };
@@ -234,24 +234,36 @@ onlp_sysi_platform_manage_leds(void)
     /*
      * Temperature Condition
      */
-    mode = ONLP_LED_MODE_GREEN;
-    for( thermal_number=THERMAL_CPU_CORE_0; thermal_number<= THERMAL_MNB; thermal_number++)
+    rv = onlp_sysi_is_system_in_shutdown_state( &in_shutdown_state );
+    if (rv < 0)
     {
-    	onlp_thermal_info_t ti;
-		if( (onlp_thermali_info_get(ONLP_THERMAL_ID_CREATE(thermal_number), &ti) < 0) ||
-			(ti.status & ONLP_THERMAL_STATUS_FAILED) ||
-			((ti.status & 0x1) == 0) )
-		{
-			mode = ONLP_LED_MODE_RED;
-			break;
-		}
-		else {
-			if( (ti.thresholds.shutdown > 0 ) && (ti.mcelsius > ti.thresholds.shutdown ) )
-			{
-				mode = ONLP_LED_MODE_RED;
-				break;
-			}
-		}
+        return rv;
+    }
+    if ( in_shutdown_state )
+    {
+        mode = ONLP_LED_MODE_RED;
+    }
+    else
+    {
+        mode = ONLP_LED_MODE_GREEN;
+        for( thermal_number=THERMAL_CPU_CORE_0; thermal_number<= THERMAL_MNB; thermal_number++)
+        {
+            onlp_thermal_info_t ti;
+            if( (onlp_thermali_info_get(ONLP_THERMAL_ID_CREATE(thermal_number), &ti) < 0) ||
+                (ti.status & ONLP_THERMAL_STATUS_FAILED) ||
+                ((ti.status & 0x1) == 0) )
+            {
+                mode = ONLP_LED_MODE_RED;
+                break;
+            }
+            else {
+                if( (ti.thresholds.shutdown > 0 ) && (ti.mcelsius > ti.thresholds.shutdown ) )
+                {
+                    mode = ONLP_LED_MODE_RED;
+                    break;
+                }
+            }
+        }
     }
     onlp_ledi_mode_set(ONLP_OID_TYPE_CREATE(ONLP_OID_TYPE_LED,LED_SYSTEM), mode);
 
