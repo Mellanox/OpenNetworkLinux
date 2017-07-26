@@ -561,8 +561,8 @@ onlp_fani_rpm_set(onlp_oid_t id, int rpm)
 static int
 onlp_fani_fan_on_panel_percentage_set(int local_id, int p)
 {
-    float pwm = 0.0;
-    int   rv = 0, nbytes = 10;
+    int pwm = 0, pwm_to_set = 0;
+    int   rv = 0, nbytes = 10, tries;
     char  r_data[10]   = {0};
 
     /* Set fan speed
@@ -571,13 +571,25 @@ onlp_fani_fan_on_panel_percentage_set(int local_id, int p)
        Value 153 is 60%.
        Value 255 is 100%.
     */
-    pwm = ( (float)p / 100 ) * RPM_MAGIC_MAX;
-    snprintf(r_data, sizeof(r_data), "%d", (int)pwm);
-    nbytes = strnlen(r_data, sizeof(r_data));
-    rv = onlp_file_write((uint8_t*)r_data, nbytes, "%s%s", PREFIX_PATH,
-            fan_path[local_id].r_speed_set);
-    if (rv < 0) {
-        return ONLP_STATUS_E_INTERNAL;
+    pwm = (int)( ( (float)p / 100 ) * RPM_MAGIC_MAX );
+    /* This loop is a workaround for the BSP driver cache bug, so every fan speed write will take effect */
+    for ( tries = 1; tries >= 0; tries--)
+    {
+        if ( pwm == RPM_MAGIC_MAX )
+        {
+            pwm_to_set = pwm - tries;
+        }
+        else
+        {
+            pwm_to_set = pwm + tries;
+        }
+        snprintf(r_data, sizeof(r_data), "%d", pwm_to_set);
+        nbytes = strnlen(r_data, sizeof(r_data));
+        rv = onlp_file_write((uint8_t*)r_data, nbytes, "%s%s", PREFIX_PATH,
+                fan_path[local_id].r_speed_set);
+        if (rv < 0) {
+            return ONLP_STATUS_E_INTERNAL;
+        }
     }
 
     return ONLP_STATUS_OK;
@@ -591,7 +603,7 @@ onlp_fani_fan_on_psu_percentage_set(int local_id, int p)
 
     snprintf(r_data, sizeof(r_data), "/bsp/fan/psu%d_fan1_speed_set %d", ( local_id - FAN_8_ON_MAIN_BOARD ), p);
     rv = system(r_data);
-    if (rv < 0) {
+    if (rv == -1) {
         return ONLP_STATUS_E_INTERNAL;
     }
 
@@ -639,7 +651,7 @@ onlp_fani_percentage_set(onlp_oid_t id, int p)
             rc = onlp_fani_fan_on_psu_percentage_set(local_id, p);
             if ( rc < 0 )
             {
-                /* It may be a not connected PSU */
+                /* It may be a not connected PSU TODO */
             }
             break;
         case FAN_1_ON_MAIN_BOARD:
