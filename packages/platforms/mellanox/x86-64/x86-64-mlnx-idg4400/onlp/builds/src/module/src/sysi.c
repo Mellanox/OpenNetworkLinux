@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <syslog.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <onlplib/file.h>
@@ -52,7 +53,19 @@
 
 #define MIN_FAN_SPEED                 60 /* TODO: Minimum fan speed should be dynamically updated according to the dynamic minimum fan speed table */
 
+#define LOG_MAX_PRINT_LENGTH          1000
+
+#define LOG_LEVEL_TO_STRING(_level) ( ( _level ) == LOG_EMERG ? "EMERGENCY": \
+                                      ( _level ) == LOG_ALERT ? "ALERT": \
+                                      ( _level ) == LOG_CRIT ? "CRITICAL": \
+                                      ( _level ) == LOG_ERR ? "ERROR": \
+                                      ( _level ) == LOG_WARNING ? "WARNING": \
+                                      ( _level ) == LOG_NOTICE ? "NOTICE": \
+                                      ( _level ) == LOG_DEBUG ? "DEBUG" : "INFO" )
+
 extern int thermal_algorithm_enable;
+
+extern char* onlp_thermal_sesnor_id_to_string(onlp_oid_t local_id);
 
 static int fans_speed_changed_in_last_5_minutes = 0; /* Should initialized to 30 when changing the fan speed ( (60[sec] * 5[minutes]) / 10[secondes every period] )*/
 
@@ -60,12 +73,30 @@ static int onlp_sysi_previous_thermal_sensor_value[ THERMAL_ON_PSU2 + 1 ] = { 0 
 
 int onlp_sysi_is_system_in_shutdown_state( int *shutdown_state_bit );
 
+static int thermal_algorithm_init_called = 0;
+
 static char arr_cplddev_name[NUM_OF_CPLD][30] =
 {
     "cpld_brd_version",
     "cpld_mgmt_version",
     "cpld_port_version"
 };
+
+void onlp_sysi_syslog_print(int syslog_level, const char *pref, const char *format, ... )
+{
+    char message[LOG_MAX_PRINT_LENGTH] = {'\0'};
+    const char *level_s;
+    va_list arg_list;
+    va_start(arg_list,format);
+
+    level_s = LOG_LEVEL_TO_STRING(syslog_level);
+
+    vsprintf(message, format, arg_list);
+
+    syslog(syslog_level, "%-40s | %-9s | %s", pref, level_s, message);
+
+    va_end(arg_list);
+}
 
 const char*
 onlp_sysi_platform_get(void)
@@ -272,19 +303,32 @@ onlp_sysi_platform_manage_leds(void)
 
 int onlp_sysi_store_current_thermal_values( int dest_thermal_values[] )
 {
-    int rv = ONLP_STATUS_OK;
+    int rv = ONLP_STATUS_OK, in_shutdown_state;
     onlp_thermal_info_t thermal_info;
     onlp_oid_t local_id;
 
-    for ( local_id = THERMAL_CPU_CORE_0; local_id <= THERMAL_ON_PSU2; local_id++ )
+    rv = onlp_sysi_is_system_in_shutdown_state( &in_shutdown_state );
+    if (rv < 0)
     {
-        rv = onlp_thermali_info_get( ONLP_THERMAL_ID_CREATE( local_id ), &thermal_info );
-        if (rv < 0)
+        onlp_sysi_syslog_print(LOG_ERR,
+                               "onlp_sysi_store_current_thermal_values", "onlp_sysi_is_system_in_shutdown_state failed");
+        return rv;
+    }
+    if ( !in_shutdown_state )
+    {
+        for ( local_id = THERMAL_CPU_CORE_0; local_id <= THERMAL_ON_PSU2; local_id++ )
         {
-            dest_thermal_values[ local_id ] = 0;
-            continue; /* TODO */
+            rv = onlp_thermali_info_get( ONLP_THERMAL_ID_CREATE( local_id ), &thermal_info );
+            if (rv < 0)
+            {
+                onlp_sysi_syslog_print(LOG_ERR,
+                                       "onlp_sysi_store_current_thermal_values", "Failed to retrieve %s info",
+                                       onlp_thermal_sesnor_id_to_string(local_id));
+                dest_thermal_values[ local_id ] = 0;
+                continue; /* TODO */
+            }
+            dest_thermal_values[ local_id ] = thermal_info.mcelsius;
         }
-        dest_thermal_values[ local_id ] = thermal_info.mcelsius;
     }
 
     return ONLP_STATUS_OK;
@@ -299,6 +343,9 @@ int onlp_sysi_io_write_register(int base_addr, int offset, int len, int value)
     rv = system(r_data);
     if (rv == -1)
     {
+        onlp_sysi_syslog_print(LOG_ERR,
+                               "onlp_sysi_io_write_register", "Failed to write register %d, data %d via the command system(%s)",
+                               (base_addr + offset), value, r_data);
         return ONLP_STATUS_E_INTERNAL;
     }
 
@@ -359,18 +406,149 @@ int onlp_sysi_is_system_in_shutdown_state( int *shutdown_state_bit )
     return ONLP_STATUS_OK;
 }
 
+
+/* Thermal algorithm control file parsing functions */
+
+int onlp_sysi_string_to_float(char *str, float *output)
+{
+    int char_index = 0, devider = 1;
+    float output_int = 0, output_float = 0;
+
+    while ( ( str[char_index] != ' ' && str[char_index] != '\n' && str[char_index] != '\0' && str[char_index] != '.' && str[char_index] != EOF ) &&
+            ( '0' <= str[char_index] ) && ( str[char_index] <= '9' ) )
+    {
+        output_int *= 10;
+        output_int += ( str[char_index] - '0' );
+        char_index++;
+    }
+
+    if ( str[char_index] == '.' )
+    {
+        char_index++;
+        while ( ( str[char_index] != ' ' && str[char_index] != '\n' && str[char_index] != '\0' && str[char_index] != EOF) &&
+                ( '0' <= str[char_index] ) && ( str[char_index] <= '9' ) )
+        {
+            output_float *= 10;
+            output_float += ( str[char_index] - '0' );
+            devider *= 10;
+            char_index++;
+        }
+    }
+
+    *output = output_int + ( output_float / devider );
+
+    return ONLP_STATUS_OK;
+}
+
+int onlp_sysi_parse_cfg_file( char *filename, char out_cfg_keys[10][50], char out_cfg_data[10][50], unsigned int *out_keywords_number )
+{
+    FILE *input_file;
+    int character;
+    unsigned int  keyword_char_index = 0, data_char_index = 0, keywords_index = 0;
+
+    input_file = fopen(filename, "rw+");
+    if (input_file == 0)
+    {
+        onlp_sysi_syslog_print(LOG_ERR,
+                               "onlp_sysi_parse_cfg_file", "fopen failed for file %s", filename);
+        return ONLP_STATUS_E_INVALID;
+    }
+
+    while ( ( character = fgetc( input_file ) ) != EOF )
+    {
+        if ( character == '#')
+        {
+            while ( ( character = fgetc( input_file ) ) != EOF )
+            {
+                if ( character == '\n' || character == '\0' )
+                {
+                    break;
+                }
+            }
+        }
+
+        if ( character != ' ' && character != '\n' )
+        {
+            if ( character != '=' )
+            {
+                out_cfg_keys[keywords_index][keyword_char_index] = character;
+                keyword_char_index++;
+            }
+            else
+            {
+                out_cfg_keys[keywords_index][keyword_char_index] = '\0';
+                keyword_char_index = 0;
+                while ( ( character = fgetc( input_file ) ) != EOF )
+                {
+                    if ( character == '#')
+                    {
+                        while ( ( character = fgetc( input_file ) ) != EOF )
+                        {
+                            if ( character == '\n' || character == '\0' )
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    if ( character == '\n' || character == EOF )
+                    {
+                        out_cfg_data[keywords_index][data_char_index] = '\0';
+                        data_char_index = 0;
+                        keywords_index++;
+                        break;
+                    }
+                    if ( character != ' ' )
+                    {
+                        out_cfg_data[keywords_index][data_char_index] = character;
+                        data_char_index++;
+                    }
+                }
+            }
+        }
+    }
+
+    *out_keywords_number = keywords_index;
+
+    fclose(input_file);
+
+    return ONLP_STATUS_OK;
+
+}
+
+
 int onlp_sysi_thermal_algorithm_init( void )
 {
-    /* TODO: Should read the thermal algorithm control file in this function.*/
     int rv = ONLP_STATUS_OK;
-    rv = onlp_sysi_store_current_thermal_values( onlp_sysi_previous_thermal_sensor_value );
+    float data;
+    char cfg_keys[10][50] = {{'\0'}};
+    char cfg_data[10][50] = {{'\0'}};
+    unsigned int keywords_length, index;
+
+    /* Parse the thermal algorithm control file */
+    rv = onlp_sysi_parse_cfg_file( "/usr/src/local/mlnx/idg4400/.thermal_algorithm_control", cfg_keys, cfg_data, &keywords_length );
     if (rv < 0)
     {
-        return rv;
+        onlp_sysi_syslog_print(LOG_ERR,
+                               "onlp_sysi_thermal_algorithm_init", "onlp_sysi_parse_cfg_file, enabling the thermal algorithm as default");
+        thermal_algorithm_enable = 1;
     }
+    else
+    {
+        for ( index = 0; index < keywords_length; index++ )
+        {
+            if ( strcmp(cfg_keys[index], "enable") == 0 )
+            {
+                onlp_sysi_string_to_float(cfg_data[index], &data);
+                thermal_algorithm_enable = (int)data;
+            }
+        }
+    }
+
 
     if ( thermal_algorithm_enable )
     {
+        onlp_sysi_syslog_print(LOG_DEBUG,
+                               "onlp_sysi_thermal_algorithm_init", "The Thermal Algorithm is enabled, initializing the watchdog...");
         /* Initialize the watchdog timer */
         rv = onlp_sysi_io_write_register(0x2500, 0xC9, 1, 14); /* Configure the watchdog timer to 2^14 = 16384 milliseconds */
         if (rv < 0)
@@ -388,6 +566,11 @@ int onlp_sysi_thermal_algorithm_init( void )
             return rv;
         }
         rv = onlp_sysi_io_write_register(0x2500, 0xC7, 1, 0x11); /* Bitmap: trigger the watchdog clear: bit 0 is WD1 timer clear & bit 4 is WD1 counter clear (1 = clear) */
+        if (rv < 0)
+        {
+            return rv;
+        }
+        rv = onlp_sysi_store_current_thermal_values( onlp_sysi_previous_thermal_sensor_value );
         if (rv < 0)
         {
             return rv;
@@ -453,6 +636,9 @@ int onlp_sysi_update_fans_speed_percentage( int new_speed_percentage )
     rv = onlp_fani_percentage_set( ONLP_FAN_ID_CREATE(FAN_1_ON_MAIN_BOARD), new_speed_percentage );
     if (rv < 0)
     {
+        onlp_sysi_syslog_print(LOG_ERR,
+                               "onlp_sysi_update_fans_speed_percentage", "Failed to set fan %d speed to %d%%",
+                               FAN_1_ON_MAIN_BOARD, new_speed_percentage);
         return rv;
     }
 
@@ -462,6 +648,9 @@ int onlp_sysi_update_fans_speed_percentage( int new_speed_percentage )
         rv = onlp_fani_info_get( ONLP_FAN_ID_CREATE( local_psu_fan_id ), &fan_info );
         if (rv < 0)
         {
+            onlp_sysi_syslog_print(LOG_ERR,
+                                   "onlp_sysi_update_fans_speed_percentage", "Failed to retrieve PSU-%d fan info",
+                                   ( local_psu_fan_id - FAN_8_ON_MAIN_BOARD ));
             continue; /* TODO */
         }
 
@@ -470,6 +659,9 @@ int onlp_sysi_update_fans_speed_percentage( int new_speed_percentage )
             rv = onlp_fani_percentage_set( ONLP_FAN_ID_CREATE(local_psu_fan_id), new_speed_percentage );
             if (rv < 0)
             {
+                onlp_sysi_syslog_print(LOG_ERR,
+                                       "onlp_sysi_update_fans_speed_percentage", "Failed to set PSU-%d fan speed to %d%%",
+                                       ( local_psu_fan_id - FAN_8_ON_MAIN_BOARD ), new_speed_percentage);
                 return rv;
             }
         }
@@ -479,8 +671,13 @@ int onlp_sysi_update_fans_speed_percentage( int new_speed_percentage )
     rv = onlp_sysi_store_current_thermal_values( onlp_sysi_previous_thermal_sensor_value );
     if (rv < 0)
     {
+        onlp_sysi_syslog_print(LOG_ERR,
+                               "onlp_sysi_update_fans_speed_percentage", "onlp_sysi_store_current_thermal_values failed");
         return rv;
     }
+
+    onlp_sysi_syslog_print(LOG_INFO,
+                           "onlp_sysi_update_fans_speed_percentage", "Fans speed was set to %d%%", new_speed_percentage);
 
     return ONLP_STATUS_OK;
 }
@@ -495,6 +692,8 @@ int onlp_sysi_cold_algorithm( void )
         rv = onlp_fani_info_get(ONLP_FAN_ID_CREATE(FAN_1_ON_MAIN_BOARD), &fan_info);
         if (rv < 0)
         {
+            onlp_sysi_syslog_print(LOG_ERR,
+                                   "onlp_sysi_cold_algorithm", "onlp_fani_info_get failed");
             return rv;
         }
         if ( MIN_FAN_SPEED < fan_info.percentage )
@@ -502,8 +701,16 @@ int onlp_sysi_cold_algorithm( void )
             rv = onlp_sysi_update_fans_speed_percentage( fan_info.percentage * 0.9 );
             if (rv < 0)
             {
+                onlp_sysi_syslog_print(LOG_ERR,
+                                       "onlp_sysi_cold_algorithm", "onlp_sysi_update_fans_speed_percentage failed for speed %d",
+                                       ( fan_info.percentage * 0.9 ));
                 return rv;
             }
+        }
+        else
+        {
+            onlp_sysi_syslog_print(LOG_DEBUG,
+                                   "onlp_sysi_cold_algorithm", "The fans are running at the minimum speed");
         }
     }
 
@@ -521,6 +728,8 @@ int onlp_sysi_hot_algorithm( )
     rv = onlp_fani_info_get(ONLP_FAN_ID_CREATE(FAN_1_ON_MAIN_BOARD), &fan_info);
     if (rv < 0)
     {
+        onlp_sysi_syslog_print(LOG_ERR,
+                               "onlp_sysi_hot_algorithm", "onlp_fani_info_get failed");
         return rv;
     }
     if ( fan_info.percentage >= 100 )
@@ -534,11 +743,15 @@ int onlp_sysi_hot_algorithm( )
         rv = onlp_thermali_info_get( ONLP_THERMAL_ID_CREATE( local_id ), &thermal_info );
         if (rv < 0)
         {
+            onlp_sysi_syslog_print(LOG_ERR,
+                                   "onlp_sysi_hot_algorithm", "Failed to retrieve %s info",
+                                   onlp_thermal_sesnor_id_to_string(local_id));
             continue /* TODO */;
         }
 
         if ( ( thermal_info.mcelsius - onlp_sysi_previous_thermal_sensor_value[ local_id ] ) > 4000 )
         {
+            onlp_sysi_syslog_print(LOG_NOTICE, "onlp_sysi_hot_algorithm", "%s temperature increased by more than 4000 [mcelsius] from the previous sample", onlp_thermal_sesnor_id_to_string(local_id));
             all_fans_speed_percentage *= 1.20;
             update_fans_speed = 1;
             break;
@@ -563,6 +776,9 @@ int onlp_sysi_hot_algorithm( )
         rv = onlp_sysi_update_fans_speed_percentage( all_fans_speed_percentage );
         if (rv < 0)
         {
+            onlp_sysi_syslog_print(LOG_ERR,
+                                   "onlp_sysi_hot_algorithm", "onlp_sysi_update_fans_speed_percentage failed for speed %d%%",
+                                   all_fans_speed_percentage);
             return rv;
         }
     }
@@ -584,13 +800,28 @@ int onlp_sysi_platform_manage_fans(void)
     int rv = ONLP_STATUS_OK;
     onlp_fan_info_t fan_info;
     onlp_thermal_info_t thermal_info;
-    onlp_oid_t local_id;
-    int all_fans_speed_percentage = 60, update_fans_speed = 0, in_shutdown_state, current_fans_speed_percentage = 0;
+    onlp_oid_t local_id, worst_thermal_sensor_local_id = THERMAL_CPU_CORE_0;
+    int all_fans_speed_percentage = 60, update_fans_speed = 0, in_shutdown_state, current_fans_speed_percentage = 0, worst_thermal_sensor_temperature = 0;
     onlp_sysi_thermal_range_status all_thermals_status = THERMAL_IN_LOW_RANGE;
 
+    openlog("ONLP - Thermal Algorithm: ", LOG_PID | LOG_CONS, LOG_USER);
+
+    if ( !thermal_algorithm_init_called )
+    {
+        rv = onlp_sysi_thermal_algorithm_init();
+        if (rv < 0)
+        {
+            onlp_sysi_syslog_print(LOG_ERR,
+                                   "onlp_sysi_platform_manage_fans", "onlp_sysi_thermal_algorithm_init failed");
+            return rv;
+        }
+        thermal_algorithm_init_called = 1;
+    }
     if ( thermal_algorithm_enable )
     {
         /* reset the watchdog timer */
+        onlp_sysi_syslog_print(LOG_DEBUG,
+                               "onlp_sysi_platform_manage_fans", "Reset the watchdog timer");
         rv = onlp_sysi_io_write_register(0x2500, 0xC7, 1, 0x1); /* Bitmap: trigger the watchdog clear: bit 0 is WD1 timer clear (1 = clear) */
         if (rv < 0)
         {
@@ -605,12 +836,22 @@ int onlp_sysi_platform_manage_fans(void)
         rv = onlp_sysi_is_system_in_shutdown_state( &in_shutdown_state );
         if (rv < 0)
         {
+            onlp_sysi_syslog_print(LOG_ERR,
+                                   "onlp_sysi_platform_manage_fans", "onlp_sysi_is_system_in_shutdown_state failed");
             return rv;
         }
         if ( in_shutdown_state )
         {
+            onlp_sysi_syslog_print(LOG_ALERT,
+                                   "onlp_sysi_platform_manage_fans", "The system is in shut-down state! Power cycle must be done to recover the system (electric unplug for about 8 seconds and then replug)");
             /* In shutdown state just set fans speed to 100% */
-            all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
+            rv = onlp_sysi_update_fans_speed_percentage( 100 );
+            if (rv < 0)
+            {
+                onlp_sysi_syslog_print(LOG_ERR,
+                                       "onlp_sysi_platform_manage_fans", "onlp_sysi_update_fans_speed_percentage failed");
+                return rv;
+            }
         }
         else
         {
@@ -620,6 +861,9 @@ int onlp_sysi_platform_manage_fans(void)
                 rv = onlp_fani_info_get(ONLP_FAN_ID_CREATE(local_id), &fan_info);
                 if (rv < 0)
                 {
+                    onlp_sysi_syslog_print(LOG_CRIT,
+                                           "onlp_sysi_platform_manage_fans", "Failed to retrieve fan %d info",
+                                           local_id);
                     return rv;
                 }
                 else
@@ -627,12 +871,18 @@ int onlp_sysi_platform_manage_fans(void)
                     if ( ! ( fan_info.status & 1 ) )
                     {
                         /* Fan is not present */
+                        onlp_sysi_syslog_print(LOG_CRIT,
+                                               "onlp_sysi_platform_manage_fans", "Fan %d is not present",
+                                               local_id);
                         all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
                         break;
                     }
 
                     if ( ! IS_FAN_RPM_IN_THE_VALID_RANGE( local_id, fan_info.rpm ) )
                     {
+                        onlp_sysi_syslog_print(LOG_CRIT,
+                                               "onlp_sysi_platform_manage_fans", "Fan %d RPM is not in the valid RPM range",
+                                               local_id);
                         all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
                         break;
                     }
@@ -646,22 +896,21 @@ int onlp_sysi_platform_manage_fans(void)
                 rv = onlp_thermali_info_get( ONLP_THERMAL_ID_CREATE( local_id ), &thermal_info );
                 if (rv < 0)
                 {
+                    onlp_sysi_syslog_print(LOG_ERR,
+                                           "onlp_sysi_platform_manage_fans", "Failed to retrieve %s info",
+                                           onlp_thermal_sesnor_id_to_string(local_id));
                     continue; /* TODO */
                 }
 
-                if ( thermal_info.thresholds.warning > 0 )
-                {
-                    if ( thermal_info.mcelsius > thermal_info.thresholds.warning )
-                    {
-                        printf("WARNING !!! thermal sensor %d reached its warning threshold\n", local_id);
-                    }
-                }
 
                 if ( thermal_info.thresholds.shutdown > 0 )
-                { /* TODO warn when reaching warning threshold */
-                    /* TODO Add logging */
+                {
                     if ( thermal_info.mcelsius > thermal_info.thresholds.shutdown )
                     {
+                        onlp_sysi_syslog_print(LOG_ALERT,
+                                               "onlp_sysi_platform_manage_fans", "%s reached its shutdown threshold (its current temperature is %d [mcelsius], its shutdown threshold is %d [mcelsius]), shutting-down the system...",
+                                               onlp_thermal_sesnor_id_to_string(local_id),
+                                               thermal_info.mcelsius, thermal_info.thresholds.shutdown);
                         /* Shutdown the system TODO: Send SNMP trap */
                         rv = onlp_sysi_io_write_register(0x2500, 0x2f, 1, 0xfb);
                         if (rv < 0)
@@ -676,6 +925,16 @@ int onlp_sysi_platform_manage_fans(void)
                         }
                     }
                 }
+                if ( thermal_info.thresholds.warning > 0 )
+                {
+                    if ( thermal_info.mcelsius > thermal_info.thresholds.warning )
+                    {
+                        onlp_sysi_syslog_print(LOG_WARNING,
+                                               "onlp_sysi_platform_manage_fans", "%s reached its warning threshold (its current temperature is %d [mcelsius], its warning threshold is %d [mcelsius])",
+                                               onlp_thermal_sesnor_id_to_string(local_id),
+                                               thermal_info.mcelsius, thermal_info.thresholds.warning);
+                    }
+                }
 
                 if ( ( ( thermal_sensors_ranges_values[ local_id ].critical_range.high_limit - thermal_sensors_ranges_values[ local_id ].critical_range.low_limit ) > 0 ) &&
                           ( ( thermal_sensors_ranges_values[ local_id ].critical_range.low_limit < thermal_info.mcelsius ) && ( thermal_info.mcelsius < thermal_sensors_ranges_values[ local_id ].critical_range.high_limit ) ) )
@@ -683,6 +942,8 @@ int onlp_sysi_platform_manage_fans(void)
                     if ( all_thermals_status < THERMAL_IN_CRITICAL_RANGE )
                     {
                         all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
+                        worst_thermal_sensor_local_id = local_id;
+                        worst_thermal_sensor_temperature = thermal_info.mcelsius;
                     }
                 }
                 else if ( ( ( thermal_sensors_ranges_values[ local_id ].very_high_range.high_limit - thermal_sensors_ranges_values[ local_id ].very_high_range.low_limit ) > 0 ) &&
@@ -691,6 +952,8 @@ int onlp_sysi_platform_manage_fans(void)
                     if ( all_thermals_status < THERMAL_IN_VERY_HIGH_RANGE )
                     {
                         all_thermals_status = THERMAL_IN_VERY_HIGH_RANGE;
+                        worst_thermal_sensor_local_id = local_id;
+                        worst_thermal_sensor_temperature = thermal_info.mcelsius;
                     }
                 }
                 else if ( ( ( thermal_sensors_ranges_values[ local_id ].high_range.high_limit - thermal_sensors_ranges_values[ local_id ].high_range.low_limit ) > 0 ) &&
@@ -699,6 +962,8 @@ int onlp_sysi_platform_manage_fans(void)
                     if ( all_thermals_status < THERMAL_IN_HIGH_RANGE )
                     {
                         all_thermals_status = THERMAL_IN_HIGH_RANGE;
+                        worst_thermal_sensor_local_id = local_id;
+                        worst_thermal_sensor_temperature = thermal_info.mcelsius;
                     }
                 }
                 else if ( ( ( thermal_sensors_ranges_values[ local_id ].in_range.high_limit - thermal_sensors_ranges_values[ local_id ].in_range.low_limit ) > 0 ) &&
@@ -707,6 +972,8 @@ int onlp_sysi_platform_manage_fans(void)
                     if ( all_thermals_status < THERMAL_IN_DESIRED_RANGE )
                     {
                         all_thermals_status = THERMAL_IN_DESIRED_RANGE;
+                        worst_thermal_sensor_local_id = local_id;
+                        worst_thermal_sensor_temperature = thermal_info.mcelsius;
                     }
                 }
                 else if ( ( ( thermal_sensors_ranges_values[ local_id ].low_range.high_limit - thermal_sensors_ranges_values[ local_id ].low_range.low_limit ) > 0 ) &&
@@ -715,63 +982,77 @@ int onlp_sysi_platform_manage_fans(void)
                     if ( all_thermals_status < THERMAL_IN_LOW_RANGE )
                     {
                         all_thermals_status = THERMAL_IN_LOW_RANGE;
+                        worst_thermal_sensor_local_id = local_id;
+                        worst_thermal_sensor_temperature = thermal_info.mcelsius;
                     }
                 }
             }
-        }
 
-        switch ( all_thermals_status )
-        {
-            case THERMAL_IN_LOW_RANGE:
-                /* Do cold algorithm */
-                rv = onlp_sysi_cold_algorithm();
-                if (rv < 0)
-                {
-                    return rv;
-                }
-                break;
-
-            case THERMAL_IN_DESIRED_RANGE:
-                /* do nothing */
-                break;
-
-            case THERMAL_IN_HIGH_RANGE:
-                /* enforce minimum fan speed */
-                if ( current_fans_speed_percentage < MIN_FAN_SPEED )
-                {
-                    all_fans_speed_percentage = MIN_FAN_SPEED;
-                    update_fans_speed = 1;
-                }
-                break;
-
-            case THERMAL_IN_VERY_HIGH_RANGE:
-                /* Do hot algorithm */
-                rv = onlp_sysi_hot_algorithm();
-                if (rv < 0)
-                {
-                    return rv;
-                }
-                break;
-
-            case THERMAL_IN_CRITICAL_RANGE:
-                /* set fan speed to 100% */
-                if ( current_fans_speed_percentage < 100 )
-                {
-                    all_fans_speed_percentage = 100;
-                    update_fans_speed = 1;
-                }
-                break;
-        }
-
-        if ( update_fans_speed )
-        {
-            rv = onlp_sysi_update_fans_speed_percentage( all_fans_speed_percentage );
-            if (rv < 0)
+            switch ( all_thermals_status )
             {
-                return rv;
+                case THERMAL_IN_LOW_RANGE:
+                    onlp_sysi_syslog_print(LOG_INFO, "onlp_sysi_platform_manage_fans", "System temperature is in the low range");
+                    /* Do cold algorithm */
+                    rv = onlp_sysi_cold_algorithm();
+                    if (rv < 0)
+                    {
+                        return rv;
+                    }
+                    break;
+
+                case THERMAL_IN_DESIRED_RANGE:
+                    onlp_sysi_syslog_print(LOG_INFO, "onlp_sysi_platform_manage_fans", "System temperature is in the desired range");
+                    /* do nothing */
+                    break;
+
+                case THERMAL_IN_HIGH_RANGE:
+                    onlp_sysi_syslog_print(LOG_INFO, "onlp_sysi_platform_manage_fans", "System temperature is in the high range, the worst status is at %s, its current temperature is %d [mcelsius]", onlp_thermal_sesnor_id_to_string(worst_thermal_sensor_local_id), worst_thermal_sensor_temperature);
+                    /* enforce minimum fan speed */
+                    if ( current_fans_speed_percentage < MIN_FAN_SPEED )
+                    {
+                        all_fans_speed_percentage = MIN_FAN_SPEED;
+                        update_fans_speed = 1;
+                    }
+                    break;
+
+                case THERMAL_IN_VERY_HIGH_RANGE:
+                    onlp_sysi_syslog_print(LOG_NOTICE, "onlp_sysi_platform_manage_fans", "System temperature is in the very high range, the worst status is at %s, its current temperature is %d [mcelsius]", onlp_thermal_sesnor_id_to_string(worst_thermal_sensor_local_id), worst_thermal_sensor_temperature);
+                    /* Do hot algorithm */
+                    rv = onlp_sysi_hot_algorithm();
+                    if (rv < 0)
+                    {
+                        return rv;
+                    }
+                    break;
+
+                case THERMAL_IN_CRITICAL_RANGE:
+                    onlp_sysi_syslog_print(LOG_CRIT, "onlp_sysi_platform_manage_fans", "System temperature is in the critical range, the worst status is at %s, its current temperature is %d [mcelsius]", onlp_thermal_sesnor_id_to_string(worst_thermal_sensor_local_id), worst_thermal_sensor_temperature);
+                    /* set fan speed to 100% */
+                    if ( current_fans_speed_percentage < 100 )
+                    {
+                        all_fans_speed_percentage = 100;
+                        update_fans_speed = 1;
+                    }
+                    break;
+            }
+
+            if ( update_fans_speed )
+            {
+                rv = onlp_sysi_update_fans_speed_percentage( all_fans_speed_percentage );
+                if (rv < 0)
+                {
+                    onlp_sysi_syslog_print(LOG_ERR,
+                                           "onlp_sysi_platform_manage_fans", "onlp_sysi_update_fans_speed_percentage failed");
+                    return rv;
+                }
             }
         }
     }
+    else
+    {
+        onlp_sysi_syslog_print(LOG_INFO, "onlp_sysi_platform_manage_fans", "Theraml algorithm is disabled!");
+    }
 
+    closelog();
     return ONLP_STATUS_OK;
 }
