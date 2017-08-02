@@ -550,6 +550,8 @@ int onlp_sysi_thermal_algorithm_init( void )
     char cfg_data[10][50] = {{'\0'}};
     unsigned int keywords_length, index;
 
+    /* Print only LOG_WARNING and above syslog levels */
+    setlogmask(LOG_UPTO(LOG_WARNING));
     /* Parse the thermal algorithm control file */
     rv = onlp_sysi_parse_cfg_file( "/usr/src/local/mlnx/idg4400/.thermal_algorithm_control", cfg_keys, cfg_data, &keywords_length );
     if (rv < 0)
@@ -826,8 +828,10 @@ int onlp_sysi_platform_manage_fans(void)
     int rv = ONLP_STATUS_OK;
     onlp_fan_info_t fan_info;
     onlp_thermal_info_t thermal_info;
+    /* onlp_psu_info_t psu_info; TODO should add PSU status check */
     onlp_oid_t local_id, worst_thermal_sensor_local_id = THERMAL_CPU_CORE_0;
-    int all_fans_speed_percentage = 60, update_fans_speed = 0, in_shutdown_state, current_fans_speed_percentage = 0, worst_thermal_sensor_temperature = 0;
+    int all_fans_speed_percentage = 60, update_fans_speed = 0, in_shutdown_state;
+    int current_fans_speed_percentage = 0, worst_thermal_sensor_temperature = 0, fans_problem = 0;
     onlp_sysi_thermal_range_status all_thermals_status = THERMAL_IN_LOW_RANGE;
 
     openlog("ONLP - Thermal Algorithm: ", LOG_PID | LOG_CONS, LOG_USER);
@@ -868,6 +872,7 @@ int onlp_sysi_platform_manage_fans(void)
         }
         if ( in_shutdown_state )
         {
+            /* TODO should modify the below print level to emergency with boolean to perform it only once */
             onlp_sysi_syslog_print(LOG_ALERT,
                                    "onlp_sysi_platform_manage_fans", "The system is in shut-down state! Power cycle must be done to recover the system (electric unplug for about 8 seconds and then replug)");
             /* In shutdown state just set fans speed to 100% */
@@ -881,6 +886,18 @@ int onlp_sysi_platform_manage_fans(void)
         }
         else
         {
+            /* Check the PSUs status TODO should add PSU status check
+            for ( local_id = PSU1_ID; local_id <= PSU2_ID; local_id++ )
+            {
+                rv = onlp_psui_info_get(ONLP_PSU_ID_CREATE(local_id), &psu_info);
+                if (rv < 0)
+                {
+                    onlp_sysi_syslog_print(LOG_CRIT,
+                                           "onlp_sysi_platform_manage_fans", "Failed to retrieve PSU %d info",
+                                           local_id);
+                    return rv;
+                }
+            } */
             /* Check the fans status */
             for ( local_id = FAN_1_ON_MAIN_BOARD; local_id <= FAN_8_ON_MAIN_BOARD; local_id++ )
             {
@@ -890,6 +907,7 @@ int onlp_sysi_platform_manage_fans(void)
                     onlp_sysi_syslog_print(LOG_CRIT,
                                            "onlp_sysi_platform_manage_fans", "Failed to retrieve fan %d info",
                                            local_id);
+                    /* TODO should treat as fans_problem = 1 */
                     return rv;
                 }
                 else
@@ -900,19 +918,31 @@ int onlp_sysi_platform_manage_fans(void)
                         onlp_sysi_syslog_print(LOG_CRIT,
                                                "onlp_sysi_platform_manage_fans", "Fan %d is not present",
                                                local_id);
-                        all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
-                        break;
+                        fans_problem = 1;
                     }
 
-                    if ( ! IS_FAN_RPM_IN_THE_VALID_RANGE( local_id, fan_info.rpm ) )
+                    else if ( ! IS_FAN_RPM_IN_THE_VALID_RANGE( local_id, fan_info.rpm ) )
                     {
                         onlp_sysi_syslog_print(LOG_CRIT,
                                                "onlp_sysi_platform_manage_fans", "Fan %d RPM is not in the valid RPM range",
                                                local_id);
-                        all_thermals_status = THERMAL_IN_CRITICAL_RANGE;
-                        break;
+                        fans_problem = 1;
                     }
-                    current_fans_speed_percentage = fan_info.percentage;
+                    else
+                    {
+                        current_fans_speed_percentage = fan_info.percentage;
+                    }
+                }
+            }
+
+            if ( fans_problem )
+            {
+                if ( current_fans_speed_percentage < 100 )
+                {
+                    onlp_sysi_syslog_print(LOG_CRIT,
+                                           "onlp_sysi_platform_manage_fans", "Will set fans speed percentage to 100%% due to the above fan(s) problem(s)");
+                    all_fans_speed_percentage = 100;
+                    update_fans_speed = 1;
                 }
             }
 
@@ -925,7 +955,7 @@ int onlp_sysi_platform_manage_fans(void)
                     onlp_sysi_syslog_print(LOG_ERR,
                                            "onlp_sysi_platform_manage_fans", "Failed to retrieve %s info",
                                            onlp_thermal_sesnor_id_to_string(local_id));
-                    continue; /* TODO */
+                    continue; /* TODO should treat this situation as passing the shutdown threshold */
                 }
 
 
@@ -933,7 +963,7 @@ int onlp_sysi_platform_manage_fans(void)
                 {
                     if ( thermal_info.mcelsius > thermal_info.thresholds.shutdown )
                     {
-                        onlp_sysi_syslog_print(LOG_ALERT,
+                        onlp_sysi_syslog_print(LOG_EMERG,
                                                "onlp_sysi_platform_manage_fans", "%s reached its shutdown threshold (its current temperature is %d [mcelsius], its shutdown threshold is %d [mcelsius]), shutting-down the system...",
                                                onlp_thermal_sesnor_id_to_string(local_id),
                                                thermal_info.mcelsius, thermal_info.thresholds.shutdown);
@@ -1018,11 +1048,14 @@ int onlp_sysi_platform_manage_fans(void)
             {
                 case THERMAL_IN_LOW_RANGE:
                     onlp_sysi_syslog_print(LOG_INFO, "onlp_sysi_platform_manage_fans", "System temperature is in the low range");
-                    /* Do cold algorithm */
-                    rv = onlp_sysi_cold_algorithm();
-                    if (rv < 0)
+                    if ( !fans_problem )
                     {
-                        return rv;
+                        /* Do cold algorithm */
+                        rv = onlp_sysi_cold_algorithm();
+                        if (rv < 0)
+                        {
+                            return rv;
+                        }
                     }
                     break;
 
@@ -1033,31 +1066,40 @@ int onlp_sysi_platform_manage_fans(void)
 
                 case THERMAL_IN_HIGH_RANGE:
                     onlp_sysi_syslog_print(LOG_INFO, "onlp_sysi_platform_manage_fans", "System temperature is in the high range, the worst status is at %s, its current temperature is %d [mcelsius]", onlp_thermal_sesnor_id_to_string(worst_thermal_sensor_local_id), worst_thermal_sensor_temperature);
-                    /* enforce minimum fan speed */
-                    if ( current_fans_speed_percentage < MIN_FAN_SPEED )
+                    if ( !fans_problem )
                     {
-                        all_fans_speed_percentage = MIN_FAN_SPEED;
-                        update_fans_speed = 1;
+                        /* enforce minimum fan speed */
+                        if ( current_fans_speed_percentage < MIN_FAN_SPEED )
+                        {
+                            all_fans_speed_percentage = MIN_FAN_SPEED;
+                            update_fans_speed = 1;
+                        }
                     }
                     break;
 
                 case THERMAL_IN_VERY_HIGH_RANGE:
                     onlp_sysi_syslog_print(LOG_NOTICE, "onlp_sysi_platform_manage_fans", "System temperature is in the very high range, the worst status is at %s, its current temperature is %d [mcelsius]", onlp_thermal_sesnor_id_to_string(worst_thermal_sensor_local_id), worst_thermal_sensor_temperature);
-                    /* Do hot algorithm */
-                    rv = onlp_sysi_hot_algorithm();
-                    if (rv < 0)
+                    if ( !fans_problem )
                     {
-                        return rv;
+                        /* Do hot algorithm */
+                        rv = onlp_sysi_hot_algorithm();
+                        if (rv < 0)
+                        {
+                            return rv;
+                        }
                     }
                     break;
 
                 case THERMAL_IN_CRITICAL_RANGE:
                     onlp_sysi_syslog_print(LOG_CRIT, "onlp_sysi_platform_manage_fans", "System temperature is in the critical range, the worst status is at %s, its current temperature is %d [mcelsius]", onlp_thermal_sesnor_id_to_string(worst_thermal_sensor_local_id), worst_thermal_sensor_temperature);
-                    /* set fan speed to 100% */
-                    if ( current_fans_speed_percentage < 100 )
+                    if ( !fans_problem )
                     {
-                        all_fans_speed_percentage = 100;
-                        update_fans_speed = 1;
+                        /* set fan speed to 100% */
+                        if ( current_fans_speed_percentage < 100 )
+                        {
+                            all_fans_speed_percentage = 100;
+                            update_fans_speed = 1;
+                        }
                     }
                     break;
             }
