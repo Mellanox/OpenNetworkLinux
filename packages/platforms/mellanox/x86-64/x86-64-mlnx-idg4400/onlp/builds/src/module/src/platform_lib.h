@@ -85,6 +85,7 @@ enum onlp_thermal_id
     THERMAL_MNB,
     THERMAL_ON_PSU1,
     THERMAL_ON_PSU2,
+    THERMAL_LAST /* Must be at the end of the enum */
 };
 
 
