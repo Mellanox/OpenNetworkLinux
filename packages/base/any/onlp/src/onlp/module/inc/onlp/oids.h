@@ -56,6 +56,7 @@ typedef enum onlp_oid_type_e {
     ONLP_OID_TYPE_LED = 5,
     ONLP_OID_TYPE_MODULE = 6,
     ONLP_OID_TYPE_RTC = 7,
+    ONLP_OID_TYPE_VOLTAGE = 8,
 } onlp_oid_type_t;
 /* <auto.end.enum(tag:oid).define> */
 
@@ -72,12 +73,14 @@ typedef enum onlp_oid_type_e {
 #define ONLP_PSU_ID_CREATE(_id)     ONLP_OID_TYPE_CREATE(ONLP_OID_TYPE_PSU, _id)
 #define ONLP_LED_ID_CREATE(_id)     ONLP_OID_TYPE_CREATE(ONLP_OID_TYPE_LED, _id)
 #define ONLP_MODULE_ID_CREATE(_id)  ONLP_OID_TYPE_CREATE(ONLP_OID_TYPE_MODULE, _id)
+#define ONLP_VOLTAGE_ID_CREATE(_id) ONLP_OID_TYPE_CREATE(ONLP_OID_TYPE_VOLTAGE, _id)
 
 #define ONLP_OID_IS_THERMAL(_id) ONLP_OID_IS_TYPE(ONLP_OID_TYPE_THERMAL,_id)
 #define ONLP_OID_IS_FAN(_id)     ONLP_OID_IS_TYPE(ONLP_OID_TYPE_FAN,_id)
 #define ONLP_OID_IS_PSU(_id)     ONLP_OID_IS_TYPE(ONLP_OID_TYPE_PSU,_id)
 #define ONLP_OID_IS_LED(_id)     ONLP_OID_IS_TYPE(ONLP_OID_TYPE_LED,_id)
 #define ONLP_OID_IS_MODULE(_id)  ONLP_OID_IS_TYPE(ONLP_OID_TYPE_MODULE,_id)
+#define ONLP_OID_IS_VOLTAGE(_id) ONLP_OID_IS_TYPE(ONLP_OID_TYPE_VOLTAGE,_id)
 
 
 /**
