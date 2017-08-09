@@ -67,6 +67,28 @@ enum onlp_led_id
     LED_UID,
 };
 
+/***************** VOLTAGE related data *****************/
+enum onlp_voltage_id
+{
+	VOLTAGE_RESERVED = 0,
+    VOLTAGE_CPU_0_9,
+	VOLTAGE_CPU_1_05,
+	VOLTAGE_CPU_1_8,
+	VOLTAGE_CPU_PCH,
+	VOLTAGE_DDR3_0_675,
+	VOLTAGE_DDR3_1_35,
+	VOLTAGE_LAN,
+	VOLTAGE_PSU2_VIN,
+	VOLTAGE_PSU2_VOUT,
+	VOLTAGE_SYS,
+	VOLTAGE_USB,
+	VOLTAGE_VCORE_VIN,
+	VOLTAGE_VCORE_VOUT1,
+	VOLTAGE_VCORE_VOUT2,
+	VOLTAGE_VMON_VIN,
+	VOLTAGE_VMON_VOUT
+};
+
 
 /***************** Thermal related data *****************/
 enum onlp_thermal_id

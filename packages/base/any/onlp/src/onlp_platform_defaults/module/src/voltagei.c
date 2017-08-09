@@ -19,48 +19,14 @@
  * </bsn.cl>
  ************************************************************
  *
- *
+ * Voltage Sensor Platform Implementation.
  *
  ***********************************************************/
-#include <onlp/onlp_config.h>
-#include <onlp/onlp.h>
+#include <onlp/platformi/voltagei.h>
+#include "onlp_platform_defaults_int.h"
+#include "onlp_platform_defaults_log.h"
 
-#include <onlp/sys.h>
-#include <onlp/sfp.h>
-#include <onlp/led.h>
-#include <onlp/psu.h>
-#include <onlp/fan.h>
-#include <onlp/thermal.h>
-#include <onlp/voltage.h>
-
-#include "onlp_int.h"
-#include "onlp_json.h"
-#include "onlp_locks.h"
-
-int
-onlp_init(void)
-{
-    extern void __onlp_module_init__(void);
-    __onlp_module_init__();
-
-    char* cfile;
-
-    if( (cfile=getenv(ONLP_CONFIG_CONFIGURATION_ENV)) == NULL) {
-        cfile = ONLP_CONFIG_CONFIGURATION_FILENAME;
-    }
-
-#if ONLP_CONFIG_INCLUDE_API_LOCK == 1
-    onlp_api_lock_init();
-#endif
-
-
-    onlp_json_init(cfile);
-    onlp_sys_init();
-    onlp_sfp_init();
-    onlp_led_init();
-    onlp_psu_init();
-    onlp_fan_init();
-    onlp_thermal_init();
-    onlp_voltage_init();
-    return 0;
-}
+__ONLP_DEFAULTI_IMPLEMENTATION(onlp_voltagei_init(void));
+__ONLP_DEFAULTI_IMPLEMENTATION(onlp_voltagei_info_get(onlp_oid_t id, onlp_voltage_info_t* rv));
+__ONLP_DEFAULTI_IMPLEMENTATION(onlp_voltagei_status_get(onlp_oid_t id, uint32_t* rv));
+__ONLP_DEFAULTI_IMPLEMENTATION(onlp_voltagei_hdr_get(onlp_oid_t id, onlp_oid_hdr_t* rv));

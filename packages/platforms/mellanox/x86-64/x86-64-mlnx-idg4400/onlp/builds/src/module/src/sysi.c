@@ -32,6 +32,7 @@
 #include <onlp/platformi/ledi.h>
 #include <onlp/platformi/psui.h>
 #include <onlp/platformi/sysi.h>
+#include <onlp/platformi/voltagei.h>
 #include <onlp/platformi/thermali.h>
 #include "platform_lib.h"
 #include "x86_64_mlnx_idg4400_int.h"
@@ -148,7 +149,7 @@ onlp_sysi_onie_info_get(onlp_onie_info_t* onie)
 int
 onlp_sysi_platform_manage_leds(void)
 {
-	int rv = ONLP_STATUS_OK, fan_number, thermal_number, psu_number, in_shutdown_state;
+	int rv = ONLP_STATUS_OK, volt_number, fan_number, thermal_number, psu_number, in_shutdown_state;
 	onlp_psu_info_t pi;
 	onlp_led_mode_t mode;
 	enum onlp_led_id fan_led_id[4] = { LED_FAN1, LED_FAN2, LED_FAN3, LED_FAN4 };
@@ -261,6 +262,31 @@ onlp_sysi_platform_manage_leds(void)
                 {
                     mode = ONLP_LED_MODE_RED;
                     break;
+                }
+            }
+        }
+    }
+
+    for( volt_number = 1; volt_number<= VOLTAGE_VMON_VOUT; volt_number++)
+    {
+        onlp_voltage_info_t fi;
+        if(onlp_voltagei_info_get(ONLP_VOLTAGE_ID_CREATE(volt_number), &fi) < 0) {
+            mode = ONLP_LED_MODE_RED;
+        }
+        else if( (fi.status & 0x1) == 0) {
+            /* Not present */
+            mode = ONLP_LED_MODE_RED;
+        }
+        else if(fi.status & ONLP_VOLTAGE_STATUS_FAILED) {
+            mode = ONLP_LED_MODE_RED;
+        }
+        else
+        {
+            if( fi.range.min && fi.range.max)
+            {
+                if( (fi.voltage < fi.range.min ) || (fi.voltage > fi.range.max ) )
+                {
+                    mode = ONLP_LED_MODE_RED;
                 }
             }
         }
