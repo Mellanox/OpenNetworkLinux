@@ -43,6 +43,7 @@
     } while(0)
 
 // "psu2_vcap",
+
 static char file_names[][20] =  /* must map with voltage_led_id */
 {
     "reserved",
@@ -173,10 +174,7 @@ onlp_voltagei_info_get(onlp_oid_t id, onlp_voltage_info_t* info)
     /* Get Voltage value */
     if (onlp_file_read((uint8_t*)data, sizeof(data), &len, "%s/%s_in",
             prefix_path, file_names[local_id]) != 0) {
-            if (onlp_file_read((uint8_t*)data, sizeof(data), &len, "%s/%s_vin",
-                    prefix_path, file_names[local_id]) != 0) {
-                return ONLP_STATUS_E_INTERNAL;
-            }
+        return ONLP_STATUS_E_INTERNAL;
     }
 
     info->voltage = atoi(data);
